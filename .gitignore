@@ -1,0 +1,16 @@
+*_logs
+wandb
+.DS_Store
+__pycache__
+*.pyc
+*.egg-info
+.vscode
+.idea
+*.ckpt
+*.pth
+*.pkl
+*.pt
+*.png
+*.jpg
+*.jpeg
+*.npy

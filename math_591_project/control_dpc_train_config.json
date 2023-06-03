@@ -1,0 +1,42 @@
+{
+    "system_model": {
+        "name": "blackbox_dyn6",
+        "nhidden": [
+            128,
+            128,
+            128
+        ],
+        "nonlinearity": "leaky_relu"
+    },
+    "control_model": {
+        "nhidden": [
+            128
+        ],
+        "nonlinearity": "relu",
+        "from_checkpoint": false
+    },
+    "training": {
+        "num_epochs": 10,
+        "loss_weights": {
+            "q_XY": 100.0,
+            "q_phi": 200.0,
+            "q_v_x": 1.0,
+            "q_T": 10.0,
+            "q_delta": 200.0,
+            "q_ddelta": 100.0,
+            "q_s": 100.0
+        },
+        "optimizer": {
+            "name": "adam",
+            "lr": 1e-5
+        },
+        "scheduler": {
+            "name": "none"
+        }
+    },
+    "data": {
+        "train": "train",
+        "test": "test"
+    },
+    "with_wandb": false
+}
