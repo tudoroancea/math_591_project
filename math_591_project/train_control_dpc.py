@@ -8,6 +8,7 @@ import lightning as L
 import torch
 import torch.nn.functional as F
 import wandb
+from icecream import ic
 from lightning import Fabric
 from matplotlib import pyplot as plt
 from tqdm import tqdm
@@ -19,27 +20,23 @@ from math_591_project.plot_utils import *
 L.seed_everything(127)
 
 
-def run_model(system_model, control_model, batch):
+def run_model(system_model, control_model, batch, delta_max, ddelta_max):
     x0, xref0toNf, _ = batch
+    ic(x0.shape, xref0toNf.shape)
     u0toNfminus1 = control_model(x0, xref0toNf)
+    ic(u0toNfminus1.shape)
+
     x1toNf = system_model(x0, u0toNfminus1)
+    ic(x1toNf.shape)
     # reference losses
     XY_loss = F.mse_loss(x1toNf[:, :, :2], xref0toNf[:, 1:, :2])
     phi_loss = F.mse_loss(x1toNf[:, :, 2], xref0toNf[:, 1:, 2])
     v_x_loss = F.mse_loss(x1toNf[:, :, 3], xref0toNf[:, 1:, 3])
     # control inputs penalties
-    delta_loss = F.mse_loss(x1toNf[:, :, -1], torch.zeros_like(x1toNf[:, :, -1]))
-    T_loss = F.mse_loss(u0toNfminus1[:, :, 0], torch.zeros_like(u0toNfminus1[:, :, 0]))
-    ddelta_loss = F.mse_loss(
-        u0toNfminus1[:, :, 1], torch.zeros_like(u0toNfminus1[:, :, 1])
-    )
+    delta_loss = torch.mean(x1toNf[:, :, -1] ** 2)
+    T_loss = torch.mean(u0toNfminus1[:, :, 0] ** 2)
+    ddelta_loss = torch.mean(u0toNfminus1[:, :, 1] ** 2)
     # constraints violation penalties
-    delta_max = torch.deg2rad(
-        torch.tensor(40.0, dtype=torch.float32, requires_grad=False)
-    )
-    ddelta_max = torch.deg2rad(
-        torch.tensor(68.0 / 20, dtype=torch.float32, requires_grad=False)
-    )
     v_x_ub_loss = torch.mean(F.relu(x1toNf[:, :, 3] - 15.0) ** 2)
     v_x_lb_loss = torch.mean(F.relu(-x1toNf[:, :, 3]) ** 2)
     delta_ub_loss = torch.mean(F.relu(x1toNf[:, :, -1] - delta_max) ** 2)
@@ -76,6 +73,19 @@ def train(
     num_epochs: int = 10,
     with_wandb: bool = False,
 ):
+    delta_max = torch.deg2rad(
+        torch.tensor(
+            40.0, dtype=torch.float32, requires_grad=False, device=control_model.device
+        )
+    )
+    ddelta_max = torch.deg2rad(
+        torch.tensor(
+            68.0 / 20,
+            dtype=torch.float32,
+            requires_grad=False,
+            device=control_model.device,
+        )
+    )
     best_val_loss = float("inf")
     for epoch in tqdm(range(num_epochs)):
         control_model.train()
@@ -110,7 +120,7 @@ def train(
                 delta_lb_loss,
                 ddelta_ub_loss,
                 ddelta_lb_loss,
-            ) = run_model(system_model, control_model, batch)
+            ) = run_model(system_model, control_model, batch, delta_max, ddelta_max)
 
             loss = (
                 loss_weights["q_XY"] * XY_loss
@@ -172,7 +182,7 @@ def train(
                     delta_lb_loss,
                     ddelta_ub_loss,
                     ddelta_lb_loss,
-                ) = run_model(system_model, control_model, batch)
+                ) = run_model(system_model, control_model, batch, delta_max, ddelta_max)
             val_losses["XY"] += XY_loss.item()
             val_losses["phi"] += phi_loss.item()
             val_losses["v_x"] += v_x_loss.item()
@@ -373,7 +383,7 @@ def main():
     ]
     assert all([os.path.exists(path) for path in file_paths])
     train_dataloader, val_dataloader = get_control_loaders(
-        file_paths, batch_sizes=(32, 32)
+        file_paths, batch_sizes=(10000, 5000)
     )
     train_dataloader, val_dataloader = fabric.setup_dataloaders(
         train_dataloader, val_dataloader
