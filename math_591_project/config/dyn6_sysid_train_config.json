@@ -1,0 +1,27 @@
+{
+    "model": {
+        "name": "dyn6"
+    },
+    "training": {
+        "num_epochs": 10,
+        "loss_weights": [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+        ],
+        "optimizer": {
+            "name": "adamw",
+            "lr": 0.0005,
+            "weight_decay": 0.05
+        },
+        "scheduler": {
+            "name": "none"
+        }
+    },
+    "data": {
+        "train": "train",
+        "test": "test"
+    },
+    "with_wandb": false
+}

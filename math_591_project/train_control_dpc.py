@@ -1,4 +1,5 @@
 # Copyright (c) 2023 Tudor Oancea
+import argparse
 import json
 import os
 from copy import copy
@@ -9,10 +10,11 @@ import torch.nn.functional as F
 import wandb
 from lightning import Fabric
 from matplotlib import pyplot as plt
+from tqdm import tqdm
+
 from math_591_project.data_utils import *
 from math_591_project.models import *
 from math_591_project.plot_utils import *
-from tqdm import tqdm
 
 L.seed_everything(127)
 
@@ -227,8 +229,18 @@ def train(
 
 def main():
     torch.autograd.set_detect_anomaly(True)
+
+    parser = argparse.ArgumentParser(description="arg parser")
+    parser.add_argument(
+        "--cfg_file",
+        type=str,
+        default="config/control_dpc_train_config.json",
+        help="specify the config for training",
+    )
+    args = parser.parse_args()
+
     # set up config =========================================================
-    config = json.load(open("control_dpc_train_config.json", "r"))
+    config = json.load(open(args.cfg_file, "r"))
     with_wandb = config.pop("with_wandb")
     dt = 1 / 20
     Nf = 40
@@ -353,7 +365,7 @@ def main():
 
     # load data ================================================================
     # load all CSV files in data/sysid
-    data_dir = "data/control/" + train_dataset_path
+    data_dir = "data/" + train_dataset_path
     file_paths = [
         os.path.abspath(os.path.join(data_dir, file_path))
         for file_path in os.listdir(data_dir)

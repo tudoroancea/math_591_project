@@ -1,4 +1,5 @@
 # Copyright (c) 2023 Tudor Oancea
+import argparse
 import json
 import os
 from copy import copy
@@ -23,8 +24,12 @@ def run_model(system_model, batch):
     xtilde1toNf_p = system_model(xtilde0, utilde0toNfminus1)
     pose_loss = F.mse_loss(xtilde1toNf_p[..., :3], xtilde1toNf[..., :3])
     v_x_loss = F.mse_loss(xtilde1toNf_p[..., 3], xtilde1toNf[..., 3])
-    v_y_loss = F.mse_loss(xtilde1toNf_p[..., 4], xtilde1toNf[..., 4])
-    r_loss = F.mse_loss(xtilde1toNf_p[..., 5], xtilde1toNf[..., 5])
+    if xtilde1toNf_p.shape[-1] > 4:
+        v_y_loss = F.mse_loss(xtilde1toNf_p[..., 4], xtilde1toNf[..., 4])
+        r_loss = F.mse_loss(xtilde1toNf_p[..., 5], xtilde1toNf[..., 5])
+    else:
+        v_y_loss = torch.tensor(0.0)
+        r_loss = torch.tensor(0.0)
     return pose_loss, v_x_loss, v_y_loss, r_loss
 
 
@@ -133,8 +138,18 @@ def train(
 
 def main():
     torch.autograd.set_detect_anomaly(True)
+
+    parser = argparse.ArgumentParser(description="arg parser")
+    parser.add_argument(
+        "--cfg_file",
+        type=str,
+        default="config/sysid_train_config.json",
+        help="specify the config for training",
+    )
+    args = parser.parse_args()
+
     # set up parameters =========================================================
-    config = json.load(open("sysid_train_config.json", "r"))
+    config = json.load(open(args.cfg_file, "r"))
     with_wandb = config.pop("with_wandb")
     print(f"Training " + ("with" if with_wandb else "without") + " wandb")
     dt = 1 / 20
@@ -243,7 +258,7 @@ def main():
 
     # load data ================================================================
     # load all CSV files in data/sysid
-    data_dir = "data/control/" + train_dataset_path
+    data_dir = "data/" + train_dataset_path
     file_paths = [
         os.path.abspath(os.path.join(data_dir, file_path))
         for file_path in os.listdir(data_dir)
@@ -302,7 +317,7 @@ def main():
     system_model = fabric.setup(system_model)
 
     # create test dataloader
-    data_dir = "data/control/" + test_dataset_path
+    data_dir = "data/" + test_dataset_path
     file_paths = [
         os.path.abspath(os.path.join(data_dir, file_path))
         for file_path in os.listdir(data_dir)

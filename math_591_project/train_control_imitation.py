@@ -1,4 +1,6 @@
 # Copyright (c) 2023 Tudor Oancea
+import argparse
+import json
 import os
 from copy import copy
 
@@ -8,13 +10,13 @@ import torch.nn.functional as F
 import wandb
 from lightning import Fabric
 from matplotlib import pyplot as plt
+from tqdm import tqdm
+
 from math_591_project.data_utils import *
 from math_591_project.models import *
 from math_591_project.plot_utils import *
-from tqdm import tqdm
 
 L.seed_everything(127)
-with_wandb = True
 
 
 def run_model(model, batch):
@@ -26,14 +28,16 @@ def run_model(model, batch):
 
 
 def train(
-    fabric,
-    control_model,
-    optimizer,
-    train_dataloader,
-    val_dataloader,
-    scheduler=None,
+    fabric: Fabric,
+    system_model_name: str,
+    control_model: MLPControlPolicy,
+    optimizer: torch.optim.Optimizer,
+    train_dataloader: torch.utils.data.DataLoader,
+    val_dataloader: torch.utils.data.DataLoader,
+    scheduler: torch.optim.lr_scheduler.LRScheduler = None,
     num_epochs=10,
     loss_weights=(1.0, 1.0),
+    with_wandb=False,
 ):
     best_val_loss = float("inf")
     for epoch in tqdm(range(num_epochs)):
@@ -93,7 +97,7 @@ def train(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             fabric.save(
-                f"checkpoints/kin4_control_imitation_best.ckpt",
+                f"checkpoints/{system_model_name}_control_imitation_best.ckpt",
                 {
                     "control_model": control_model.mlp,
                     "optimizer": optimizer,
@@ -104,40 +108,38 @@ def train(
 
 def main():
     torch.autograd.set_detect_anomaly(True)
+
+    parser = argparse.ArgumentParser(description="arg parser")
+    parser.add_argument(
+        "--cfg_file",
+        type=str,
+        default="config/control_imitation_train_config.json",
+        help="specify the config for training",
+    )
+    args = parser.parse_args()
+
     # set up config =========================================================
-    config = {
-        "model": {
-            "n_hidden": (256, 256),
-            "nonlinearity": "relu",
-            "from_checkpoint": False,
-        },
-        "training": {
-            "num_epochs": 1000,
-            "loss_weights": (1.0, 1.0),
-            "optimizer": {
-                "name": "adam",
-                "lr": 1e-3,
-            },
-            "scheduler": {
-                "name": "none",
-                # "name": "multisteplr",
-                # "milestones": [701, 1601],
-                # "gamma": 0.5,
-            },
-        },
-        "data": {
-            "dataset": "control1",
-        },
-    }
-    n_hidden = config["model"]["n_hidden"]
-    nonlinearity = config["model"]["nonlinearity"]
-    from_checkpoint = config["model"]["from_checkpoint"]
+    config = json.load(open(args.cfg_file, "r"))
+    with_wandb = config["with_wandb"]
+    Nf = 40
+    dt = 1 / 20
+    system_model_name = config["system_model"]["name"]
+    control_model_best_path = (
+        f"checkpoints/{system_model_name}_control_imitation_best.ckpt"
+    )
+    control_model_final_path = (
+        f"checkpoints/{system_model_name}_control_imitation_final.ckpt"
+    )
+    nhidden = config["control_model"]["nhidden"]
+    nonlinearity = config["control_model"]["nonlinearity"]
+    from_checkpoint = config["control_model"]["from_checkpoint"]
     num_epochs = config["training"]["num_epochs"]
     optimizer_params = config["training"]["optimizer"]
     optimizer = optimizer_params.pop("name")
     scheduler_params = config["training"]["scheduler"]
     scheduler = scheduler_params.pop("name")
-    dataset = config["data"]["dataset"]
+    train_dataset_path = config["data"]["train"]
+    test_dataset_path = config["data"]["test"]
 
     # initialize wandb ==========================================
     if with_wandb:
@@ -150,21 +152,23 @@ def main():
     # intialize lightning fabric ===============================================
     fabric = Fabric()
 
-    # i_nitialize model and optimizer =========================================================
-    control_model = MLPControlPolicy(
-        nx=5,
-        nu=2,
-        Nf=20,
-        mlp=MLP(
-            nin=5 + 21 * 4, nout=2 * 20, nhidden=n_hidden, nonlinearity=nonlinearity
-        ),
+    # initialize model and optimizer =========================================================
+    nxtilde = KIN4_NXTILDE if system_model_name.endswith("kin4") else DYN6_NXTILDE
+    nutilde = KIN4_NUTILDE if system_model_name.endswith("kin4") else DYN6_NUTILDE
+    nx = nxtilde + 1
+    nu = nutilde
+
+    control_mlp = MLP(
+        nin=nx + (Nf + 1) * 4,
+        nout=nu * Nf,
+        nhidden=nhidden,
+        nonlinearity=nonlinearity,
     )
-    if from_checkpoint:
-        control_model.mlp.load_state_dict(
-            torch.load("checkpoints/kin4_control_imitation_best.ckpt")[
-                "control_mlp"
-            ].mlp.state_dict()
+    if from_checkpoint and os.path.exists(control_model_best_path):
+        control_mlp.load_state_dict(
+            torch.load(control_model_best_path)["control_model"]
         )
+    control_model = MLPControlPolicy(nx=nx, nu=nu, Nf=Nf, mlp=control_mlp)
     if with_wandb:
         wandb.watch(control_model, log_freq=1)
 
@@ -195,7 +199,7 @@ def main():
 
     # load data ================================================================
     # load all CSV files in data/sysid
-    data_dir = "data/control/" + dataset
+    data_dir = "data/" + train_dataset_path
     file_paths = [
         os.path.abspath(os.path.join(data_dir, file_path))
         for file_path in os.listdir(data_dir)
@@ -210,6 +214,7 @@ def main():
     # Run training loop with validation =========================================
     train(
         fabric,
+        system_model_name,
         control_model,
         optimizer,
         train_dataloader,
@@ -217,63 +222,65 @@ def main():
         scheduler=scheduler,
         num_epochs=num_epochs,
         loss_weights=(1.0, 1.0),
+        with_wandb=with_wandb,
     )
 
     # save model ================================================================
     fabric.save(
-        f"checkpoints/kin4_control_imitation_final.ckpt",
-        {"model": control_model.mlp},
+        control_model_final_path,
+        {"control_model": control_model.mlp},
     )
 
     if with_wandb:
         # log the model to wandb
-        wandb.save(f"checkpoints/kin4_control_imitation_final.ckpt")
-        wandb.save(f"checkpoints/kin4_control_imitation_best.ckpt")
+        wandb.save(control_model_best_path)
+        wandb.save(control_model_final_path)
 
     # evaluate model on test set ================================================
-    # recreate open loop model with new Nf
-    # model = OpenLoop(
-    #     model=RK4(
-    #         nxtilde=nxtilde,
-    #         nutilde=nutilde,
-    #         ode=(BlackboxKin4ODE if base_model == "kin4" else BlackboxDyn6ODE)(
-    #             net=MLP(
-    #                 nin=nxtilde + nutilde
-    #                 if base_model == "kin4"
-    #                 else nxtilde - 3 + nutilde,
-    #                 nout=nxtilde if base_model == "kin4" else nxtilde - 3,
-    #                 nhidden=n_hidden,
-    #                 nonlinearity=nonlinearity,
-    #             )
-    #         ),
-    #         dt=dt,
-    #     ),
-    #     Nf=Nf,
+    # # load best model
+    # control_model.mlp.load_state_dict(
+    #     torch.load(control_model_best_path)["control_model"]
     # )
-    # model.load_state_dict(torch.load(f"checkpoints/{base_model}_best.ckpt")["model"])
-    # model = fabric.setup(model)
+    # control_model.eval()
+    # # load test train_dataset
+    # data_dir = "data/" + test_dataset_path
+    # file_paths = [
+    #     os.path.abspath(os.path.join(data_dir, file_path))
+    #     for file_path in os.listdir(data_dir)
+    #     if file_path.endswith(".csv")
+    # ]
+    # test_dataset = ControlDataset(file_paths, Nf=Nf, train=False)
+    # test_dataloader = DataLoader(
+    #     test_dataset, batch_size=5, shuffle=True, num_workers=0
+    # )
+    # # evaluate model on test set
+    # x0, xref0toNf, _ = next(iter(test_dataloader))
+    # u0toNfminus1 = control_model(x0, xref0toNf)
+    # x1toNf = system_model(x0, u0toNfminus1)
 
-    # evaluate model on test set
-    # model.eval()
-    # x0, Uf, Xf = next(iter(val_dataloader))
-    # Xfpred = model(x0, Uf)
-    # id = torch.randint(0, x0.shape[0], (5,))
-    # x0 = x0[id].detach().cpu().numpy()
-    # Uf = Uf[id].detach().cpu().numpy()
-    # Xf = Xf[id].detach().cpu().numpy()
-    # Xfpred = Xfpred[id].detach().cpu().numpy()
+    # x0 = x0.detach().cpu().numpy()
+    # xref0toNf = xref0toNf.detach().cpu().numpy()
+    # u0toNfminus1 = u0toNfminus1.detach().cpu().numpy()
+    # x1toNf = x1toNf.detach().cpu().numpy()
     # if not os.path.exists("plots"):
     #     os.mkdir("plots")
-    # plot_names = [f"plots/{base_model}_{i}.png" for i in range(5)]
+    # plot_names = [f"{system_model_name}_{i}.png" for i in range(5)]
     # for i in range(5):
-    #     (plot_kin4 if base_model == "kin4" else plot_dyn6)(
-    #         x0=x0[i], Uf=Uf[i], Xf=Xf[i], Xfpred=Xfpred[i], dt=dt
+    #     (plot_kin4_control if system_model_name == "kin4" else plot_dyn6_control)(
+    #         x0=x0[i],
+    #         xref0toNf=xref0toNf[i],
+    #         u0toNfminus1=u0toNfminus1[i],
+    #         x1toNf=x1toNf[i],
+    #         dt=dt,
     #     )
-    #     plt.savefig(plot_names[i], dpi=300)
+    #     plt.savefig("plots/" + plot_names[i], dpi=300)
     # if with_wandb:
     #     # log the plot to wandb
     #     wandb.log(
-    #         {"plot/" + plot_name: wandb.Image(plot_name) for plot_name in plot_names}
+    #         {
+    #             "plot/" + plot_name: wandb.Image("plots/" + plot_name)
+    #             for plot_name in plot_names
+    #         }
     #     )
 
     # plt.show()
