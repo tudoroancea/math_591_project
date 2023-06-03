@@ -353,21 +353,21 @@ class ControlPolicy(ABC, nn.Module):
         self.Nf = Nf
 
     @abstractmethod
-    def forward(self, x0: torch.Tensor, Xref: torch.Tensor) -> torch.Tensor:
+    def forward(self, x0: torch.Tensor, xref0toNf: torch.Tensor) -> torch.Tensor:
         """
         :param x0: shape (batch_size, nx)
-        :param Xref: shape (batch_size, Nf, nx)
+        :param xref0toNf: shape (batch_size, Nf+1, nx)
         """
         assert (
-            x0.shape[0] == Xref.shape[0]
-        ), f"batch_size of x0 and Xref must be equal but are respectively {x0.shape[0]} and {Xref.shape[0]}"
+            x0.shape[0] == xref0toNf.shape[0]
+        ), f"batch_size of x0 and xref0toNf must be equal but are respectively {x0.shape[0]} and {xref0toNf.shape[0]}"
         assert (
             len(x0.shape) == 3 and x0.shape[2] == self.nx and x0.shape[1] == 1
         ), f"x0.shape must be (batch_size, 1, {self.nx}) but is {x0.shape}"
-        assert len(Xref.shape) == 3 and Xref.shape[1:] == (
+        assert len(xref0toNf.shape) == 3 and xref0toNf.shape[1:] == (
             self.Nf + 1,
             4,
-        ), f"Xref.shape must be (batch_size, {self.Nf}, {4}) but is {Xref.shape}"
+        ), f"xref0toNf.shape must be (batch_size, {self.Nf + 1}, {4}) but is {xref0toNf.shape}"
 
 
 class MLPControlPolicy(ControlPolicy):
@@ -384,16 +384,17 @@ class MLPControlPolicy(ControlPolicy):
             f"mlp must output a tensor of shape (batch_size, nu*Nf)=(batch_size,{nu*Nf})"
             f" but is {output.shape}"
         )
-
-    def forward(self, x0: torch.Tensor, Xref: torch.Tensor) -> torch.Tensor:
-        super().forward(x0, Xref)
-        output = self.mlp(
-            torch.cat((x0.squeeze(), Xref.view(x0.shape[0], -1)), dim=1)
-        ).reshape(-1, self.Nf, self.nu)
-        # print(output.shape)
-        return F.tanh(output) * torch.tensor([[1.0, np.deg2rad(80)]]).to(
-            x0.device, x0.dtype
+        self.output_scaling = torch.tensor(
+            [[1.0, np.deg2rad(68 / 20)]], dtype=torch.float32
         )
+
+    def forward(self, x0: torch.Tensor, xref0toNf: torch.Tensor) -> torch.Tensor:
+        super().forward(x0, xref0toNf)
+        self.output_scaling = self.output_scaling.to(x0.device)
+        output = self.mlp(
+            torch.cat((x0.squeeze(), xref0toNf.view(x0.shape[0], -1)), dim=1)
+        ).reshape(-1, self.Nf, self.nu)
+        return F.tanh(output) * self.output_scaling
 
 
 class OpenLoop(nn.Module):

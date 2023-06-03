@@ -329,8 +329,10 @@ def main():
     system_model.model.model.ode.load_state_dict(
         torch.load(f"checkpoints/{system_model_name}_best.ckpt")["system_model"]
     )
-    for p in system_model.parameters():
-        p.requires_grad = False
+    # for p in system_model.parameters():
+    #     p.requires_grad = False
+    system_model.requires_grad_(False)
+    system_model.eval()
     control_mlp = MLP(
         nin=nx + (Nf + 1) * 4,
         nout=nu * Nf,
@@ -376,10 +378,13 @@ def main():
     # load data ================================================================
     # load all CSV files in data/sysid
     data_dir = "data/" + train_dataset_path
+    # file_paths = [
+    #     os.path.abspath(os.path.join(data_dir, file_path))
+    #     for file_path in os.listdir(data_dir)
+    #     if file_path.endswith(".csv")
+    # ]
     file_paths = [
-        os.path.abspath(os.path.join(data_dir, file_path))
-        for file_path in os.listdir(data_dir)
-        if file_path.endswith(".csv")
+        "/Users/tudoroancea/math_591_project/math_591_project/data/train/fsds_competition_1_0.csv"
     ]
     assert all([os.path.exists(path) for path in file_paths])
     train_dataloader, val_dataloader = get_control_loaders(
@@ -422,19 +427,22 @@ def main():
     )
     control_model.eval()
     # load test train_dataset
-    data_dir = "data/control/" + test_dataset_path
+    data_dir = "data/" + test_dataset_path
     file_paths = [
         os.path.abspath(os.path.join(data_dir, file_path))
         for file_path in os.listdir(data_dir)
         if file_path.endswith(".csv")
     ]
-    test_dataset = ControlDataset(file_paths, Nf=Nf, train=False)
+    test_dataset = ControlDataset(file_paths)
     test_dataloader = DataLoader(
         test_dataset, batch_size=5, shuffle=True, num_workers=0
     )
+    test_dataloader = fabric.setup_dataloaders(test_dataloader)
+
     # evaluate model on test set
     x0, xref0toNf, _ = next(iter(test_dataloader))
-    u0toNfminus1 = control_model(x0, xref0toNf)
+    with torch.no_grad():
+        u0toNfminus1 = control_model(x0, xref0toNf)
     x1toNf = system_model(x0, u0toNfminus1)
 
     x0 = x0.detach().cpu().numpy()
@@ -443,7 +451,7 @@ def main():
     x1toNf = x1toNf.detach().cpu().numpy()
     if not os.path.exists("plots"):
         os.mkdir("plots")
-    plot_names = [f"{system_model_name}_{i}.png" for i in range(5)]
+    plot_names = [f"{system_model_name}_control_{i}.png" for i in range(5)]
     for i in range(5):
         (plot_kin4_control if system_model_name == "kin4" else plot_dyn6_control)(
             x0=x0[i],
