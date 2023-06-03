@@ -408,14 +408,16 @@ class OpenLoop(nn.Module):
     def forward(self, x0: torch.Tensor, u0toNfminus1: torch.Tensor):
         """
         :param x0: (batch_size, 1, nx)
-        :param Uf: (batch_size, Nf, nu)
-        :return Xf_pred: (batch_size, Nf, nx)
+        :param u0toNfminus1: (batch_size, Nf, nu)
+        :return x1toNf: (batch_size, Nf, nx)
         """
-        x = [self.model(x0[:, 0, :], u0toNfminus1[:, 0, :])]
+        assert u0toNfminus1.shape[1] == self.Nf
+        assert x0.shape[0] == u0toNfminus1.shape[0]
+        x1toNf = [self.model(x0[:, 0, :], u0toNfminus1[:, 0, :])]
         for i in range(1, self.Nf):
-            x.append(self.model(x[-1], u0toNfminus1[:, i, :]))
+            x1toNf.append(self.model(x1toNf[-1], u0toNfminus1[:, i, :]))
 
-        return torch.stack(x, dim=1)
+        return torch.stack(x1toNf, dim=1)
 
 
 class ClosedLoop(nn.Module):
