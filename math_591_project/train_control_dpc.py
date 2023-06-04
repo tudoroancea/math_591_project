@@ -22,12 +22,8 @@ L.seed_everything(127)
 
 def run_model(system_model, control_model, batch, delta_max, ddelta_max):
     x0, xref0toNf, _ = batch
-    ic(x0.shape, xref0toNf.shape)
     u0toNfminus1 = control_model(x0, xref0toNf)
-    ic(u0toNfminus1.shape)
-
     x1toNf = system_model(x0, u0toNfminus1)
-    ic(x1toNf.shape)
     # reference losses
     XY_loss = F.mse_loss(x1toNf[:, :, :2], xref0toNf[:, 1:, :2])
     phi_loss = F.mse_loss(x1toNf[:, :, 2], xref0toNf[:, 1:, 2])
@@ -78,13 +74,16 @@ def train(
             40.0, dtype=torch.float32, requires_grad=False, device=control_model.device
         )
     )
-    ddelta_max = torch.deg2rad(
-        torch.tensor(
-            68.0 / 20,
-            dtype=torch.float32,
-            requires_grad=False,
-            device=control_model.device,
+    ddelta_max = (
+        torch.deg2rad(
+            torch.tensor(
+                68.0,
+                dtype=torch.float32,
+                requires_grad=False,
+                device=control_model.device,
+            )
         )
+        / 20.0
     )
     best_val_loss = float("inf")
     for epoch in tqdm(range(num_epochs)):
@@ -238,14 +237,17 @@ def train(
 
 
 def main():
-    torch.autograd.set_detect_anomaly(True)
-
     parser = argparse.ArgumentParser(description="arg parser")
     parser.add_argument(
         "--cfg_file",
         type=str,
         default="config/control_dpc_train_config.json",
         help="specify the config for training",
+    )
+    parser.add_argument(
+        "--control_ckpt",
+        type=str,
+        default="",
     )
     args = parser.parse_args()
 
@@ -339,12 +341,13 @@ def main():
         nhidden=config["control_model"]["nhidden"],
         nonlinearity=config["control_model"]["nonlinearity"],
     )
-    if config["control_model"]["from_checkpoint"] and os.path.exists(
-        control_model_best_path
-    ):
-        control_mlp.load_state_dict(
-            torch.load(control_model_best_path)["control_model"]
-        )
+    if config["control_model"]["from_checkpoint"]:
+        if args.control_ckpt != "":
+            path = args.control_ckpt
+        else:
+            path = control_model_best_path
+        if os.path.exists(path):
+            control_mlp.load_state_dict(torch.load(path)["control_model"])
     control_model = MLPControlPolicy(nx=nx, nu=nu, Nf=Nf, mlp=control_mlp)
     if with_wandb:
         wandb.watch(control_model, log_freq=1)
@@ -378,14 +381,12 @@ def main():
     # load data ================================================================
     # load all CSV files in data/sysid
     data_dir = "data/" + train_dataset_path
-    # file_paths = [
-    #     os.path.abspath(os.path.join(data_dir, file_path))
-    #     for file_path in os.listdir(data_dir)
-    #     if file_path.endswith(".csv")
-    # ]
     file_paths = [
-        "/Users/tudoroancea/math_591_project/math_591_project/data/train/fsds_competition_1_0.csv"
+        os.path.abspath(os.path.join(data_dir, file_path))
+        for file_path in os.listdir(data_dir)
+        if file_path.endswith(".csv")
     ]
+    # file_paths = file_paths[:1]
     assert all([os.path.exists(path) for path in file_paths])
     train_dataloader, val_dataloader = get_control_loaders(
         file_paths, batch_sizes=(10000, 5000)
@@ -408,6 +409,16 @@ def main():
         loss_weights=loss_weights,
         with_wandb=with_wandb,
     )
+    # compare one weight in system model's state dict before and after training
+    # to make sure it's not changing
+    wbefore = torch.load(f"checkpoints/{system_model_name}_best.ckpt")["system_model"][
+        "net.net.output_layer.weight"
+    ]
+    wafter = system_model.model.model.ode.net.net[-1].weight
+    print(
+        f"sytem model output layer weight is the same: {torch.allclose(wbefore, wafter)}"
+    )
+    print(wafter.grad)
 
     # save model ================================================================
     fabric.save(

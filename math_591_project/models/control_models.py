@@ -1,5 +1,6 @@
 # Copyright (c) 2023 Tudor Oancea
 from abc import ABC, abstractmethod
+from typing import Union
 
 import numpy as np
 import torch
@@ -331,11 +332,11 @@ class ControlDiscreteModel(nn.Module):
         """
         assert x.shape[1] == self.nx
         assert u.shape[1] == self.nu
-        delta = x[:, -1] + u[:, 1]
+        delta = x[:, -1:] + u[:, 1:2]
         return torch.cat(
             (
-                self.model(x[:, :-1], torch.stack([u[:, 0], delta], dim=1)),
-                delta.unsqueeze(1),
+                self.model(x[:, :-1], torch.cat((u[:, 0:1], delta), dim=1)),
+                delta,
             ),
             dim=1,
         )
@@ -385,23 +386,32 @@ class MLPControlPolicy(ControlPolicy):
             f" but is {output.shape}"
         )
         self.output_scaling = torch.tensor(
-            [[1.0, np.deg2rad(68 / 20)]], dtype=torch.float32
+            [1.0, np.deg2rad(68.0) / 20.0], dtype=torch.float32
         )
 
     def forward(self, x0: torch.Tensor, xref0toNf: torch.Tensor) -> torch.Tensor:
+        """
+        :param x0: shape (batch_size, 1, nx)
+        :param xref0toNf: shape (batch_size, Nf+1, nx)
+        :return u0toNfminus1: shape (batch_size, Nf, nu)
+        """
         super().forward(x0, xref0toNf)
-        self.output_scaling = self.output_scaling.to(x0.device)
+        batch_size = x0.shape[0]
+        if self.output_scaling.device != x0.device:
+            self.output_scaling = self.output_scaling.to(x0.device)
         output = self.mlp(
-            torch.cat((x0.squeeze(), xref0toNf.view(x0.shape[0], -1)), dim=1)
-        ).reshape(-1, self.Nf, self.nu)
+            torch.cat((x0.squeeze(), xref0toNf.view(batch_size, -1)), dim=1)
+        ).reshape(batch_size, self.Nf, self.nu)
         return F.tanh(output) * self.output_scaling
 
 
 class OpenLoop(nn.Module):
-    model: BaseDiscretization
+    model: Union[BaseDiscretization, ControlDiscreteModel]
     Nf: int
 
-    def __init__(self, model: BaseDiscretization, Nf: int) -> None:
+    def __init__(
+        self, model: Union[BaseDiscretization, ControlDiscreteModel], Nf: int
+    ) -> None:
         super().__init__()
         self.model = model
         self.Nf = Nf

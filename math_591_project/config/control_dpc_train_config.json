@@ -10,13 +10,15 @@
     },
     "control_model": {
         "nhidden": [
+            128,
+            128,
             128
         ],
-        "nonlinearity": "relu",
+        "nonlinearity": "leaky_relu",
         "from_checkpoint": false
     },
     "training": {
-        "num_epochs": 10,
+        "num_epochs": 30,
         "loss_weights": {
             "q_XY": 100.0,
             "q_phi": 200.0,
@@ -28,7 +30,8 @@
         },
         "optimizer": {
             "name": "adam",
-            "lr": 1e-5
+            "lr": 1e-5,
+            "weight_decay": 1e-3
         },
         "scheduler": {
             "name": "none"
@@ -38,5 +41,5 @@
         "train": "train",
         "test": "test"
     },
-    "with_wandb": false
+    "with_wandb": true
 }

@@ -137,8 +137,6 @@ def train(
 
 
 def main():
-    torch.autograd.set_detect_anomaly(True)
-
     parser = argparse.ArgumentParser(description="arg parser")
     parser.add_argument(
         "--cfg_file",

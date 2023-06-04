@@ -107,8 +107,6 @@ def train(
 
 
 def main():
-    torch.autograd.set_detect_anomaly(True)
-
     parser = argparse.ArgumentParser(description="arg parser")
     parser.add_argument(
         "--cfg_file",
@@ -120,7 +118,7 @@ def main():
 
     # set up config =========================================================
     config = json.load(open(args.cfg_file, "r"))
-    with_wandb = config["with_wandb"]
+    with_wandb = config.pop("with_wandb")
     Nf = 40
     dt = 1 / 20
     system_model_name = config["system_model"]["name"]
@@ -233,18 +231,21 @@ def main():
     )
 
     # Run training loop with validation =========================================
-    train(
-        fabric,
-        system_model_name,
-        control_model,
-        optimizer,
-        train_dataloader,
-        val_dataloader,
-        scheduler=scheduler,
-        num_epochs=num_epochs,
-        loss_weights=(1.0, 1.0),
-        with_wandb=with_wandb,
-    )
+    try:
+        train(
+            fabric,
+            system_model_name,
+            control_model,
+            optimizer,
+            train_dataloader,
+            val_dataloader,
+            scheduler=scheduler,
+            num_epochs=num_epochs,
+            loss_weights=(1.0, 1.0),
+            with_wandb=with_wandb,
+        )
+    except KeyboardInterrupt:
+        print("Training interrupted, proceding to evaluation")
 
     # save model ================================================================
     fabric.save(
