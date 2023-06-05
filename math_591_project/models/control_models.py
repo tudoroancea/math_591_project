@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from icecream import ic
 
 __all__ = [
     "KIN4_NXTILDE",
@@ -376,7 +377,7 @@ class MLPControlPolicy(ControlPolicy):
         super().__init__(nx, nu, Nf)
         self.mlp = mlp
         try:
-            output = self.mlp(torch.zeros(2, nx + (Nf + 1) * 4))
+            output = self.mlp(torch.zeros(2, nx - 3 + (Nf + 1) * 4))
         except:
             raise ValueError(
                 f"mlp must take as input a tensor of shape (batch_size, nx + (Nf+1)*4)=(batch_size,{nx+(Nf+1)*4})"
@@ -386,7 +387,7 @@ class MLPControlPolicy(ControlPolicy):
             f" but is {output.shape}"
         )
         self.output_scaling = torch.tensor(
-            [1.0, np.deg2rad(68.0) / 20.0], dtype=torch.float32
+            [[[1.0, np.deg2rad(68.0) / 20.0]]], dtype=torch.float32
         )
 
     def forward(self, x0: torch.Tensor, xref0toNf: torch.Tensor) -> torch.Tensor:
@@ -399,10 +400,38 @@ class MLPControlPolicy(ControlPolicy):
         batch_size = x0.shape[0]
         if self.output_scaling.device != x0.device:
             self.output_scaling = self.output_scaling.to(x0.device)
-        output = self.mlp(
-            torch.cat((x0.squeeze(), xref0toNf.view(batch_size, -1)), dim=1)
-        ).reshape(batch_size, self.Nf, self.nu)
-        return F.tanh(output) * self.output_scaling
+
+        philoc = xref0toNf[:, :, 2] - x0[:, :, 2]  # shape (batch_size, Nf+1)
+        rot_matrix = torch.stack(
+            (
+                torch.stack(
+                    (torch.cos(philoc), -torch.sin(philoc)), dim=2
+                ),  # shape (batch_size, Nf+1, 2)
+                torch.stack(
+                    (torch.sin(philoc), torch.cos(philoc)), dim=2
+                ),  # shape (batch_size, Nf+1, 2)
+            ),
+            dim=3,
+        )  # shape (batch_size, Nf+1, 2, 2)
+
+        XYloc = torch.matmul(
+            torch.unsqueeze(xref0toNf[:, :, :2] - x0[:, :, :2], dim=2),
+            rot_matrix,
+        )  # shape (batch_size, Nf+1, 1, 2)
+        input = torch.cat(
+            (
+                x0[:, 0, 3:],  # shape (batch_size, 2)
+                torch.cat(
+                    (XYloc.squeeze(), philoc.unsqueeze(2), xref0toNf[:, :, 3:]), dim=2
+                ).view(batch_size, -1),
+            ),
+            dim=1,
+        )
+
+        return (
+            F.tanh(self.mlp(input)).view(batch_size, self.Nf, self.nu)
+            * self.output_scaling
+        )
 
 
 class OpenLoop(nn.Module):

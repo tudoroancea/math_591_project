@@ -133,6 +133,7 @@ def main():
     from_checkpoint = config["control_model"]["from_checkpoint"]
     num_epochs = config["training"]["num_epochs"]
     optimizer_params = config["training"]["optimizer"]
+    loss_weights = config["training"]["loss_weights"]
     optimizer = optimizer_params.pop("name")
     scheduler_params = config["training"]["scheduler"]
     scheduler = scheduler_params.pop("name")
@@ -178,7 +179,7 @@ def main():
     nu = nutilde
 
     control_mlp = MLP(
-        nin=nx + (Nf + 1) * 4,
+        nin=nx - 3 + (Nf + 1) * 4,
         nout=nu * Nf,
         nhidden=nhidden,
         nonlinearity=nonlinearity,
@@ -241,7 +242,7 @@ def main():
             val_dataloader,
             scheduler=scheduler,
             num_epochs=num_epochs,
-            loss_weights=(1.0, 1.0),
+            loss_weights=loss_weights,
             with_wandb=with_wandb,
         )
     except KeyboardInterrupt:
@@ -305,7 +306,7 @@ def main():
     ]
     test_dataset = ControlDataset(file_paths)
     test_dataloader = DataLoader(
-        test_dataset, batch_size=5, shuffle=True, num_workers=0
+        test_dataset, batch_size=5, shuffle=True, num_workers=1
     )
     test_dataloader = fabric.setup_dataloaders(test_dataloader)
 

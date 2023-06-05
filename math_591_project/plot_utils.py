@@ -325,6 +325,8 @@ def plot_dyn6_control(
         T_ref = np.append(uref0toNfminus1[:, 0], np.nan)
         ddelta_ref = np.append(uref0toNfminus1[:, 1], np.nan)
 
+    ref_options = {"color": "blue", "linewidth": 2}
+    pred_options = {"color": "red", "linewidth": 2}
     simulation_plot = Plot(
         row_nbr=4,
         col_nbr=3,
@@ -345,13 +347,13 @@ def plot_dyn6_control(
                 "data": xref0toNf[:, :2],
                 "curve_type": CurveType.REGULAR,
                 "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "blue", "linewidth": 2},
+                "mpl_options": ref_options,
             },
             "predicted trajectory": {
                 "data": x0toNf[:, :2],
                 "curve_type": CurveType.REGULAR,
                 "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "red", "linewidth": 2},
+                "mpl_options": pred_options,
             },
         },
     )
@@ -367,13 +369,13 @@ def plot_dyn6_control(
                 "data": np.rad2deg(xref0toNf[:, 2]),
                 "curve_type": CurveType.REGULAR,
                 "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "blue", "linewidth": 2},
+                "mpl_options": ref_options,
             },
             r"predicted $\phi$": {
                 "data": np.rad2deg(x0toNf[:, 2]),
                 "curve_type": CurveType.REGULAR,
                 "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "red", "linewidth": 2},
+                "mpl_options": pred_options,
             },
         },
     )
@@ -389,32 +391,16 @@ def plot_dyn6_control(
                 "data": xref0toNf[:, 3],
                 "curve_type": CurveType.REGULAR,
                 "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "blue", "linewidth": 2},
+                "mpl_options": ref_options,
             },
             r"predicted $v_x$": {
                 "data": x0toNf[:, 3],
                 "curve_type": CurveType.REGULAR,
                 "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "red", "linewidth": 2},
+                "mpl_options": pred_options,
             },
         },
     )
-    bruh = {
-        r"$T$": {
-            "data": T,
-            "curve_type": CurveType.REGULAR,
-            "curve_style": CurvePlotStyle.STEP,
-            "mpl_options": {"color": "red", "linewidth": 2, "where": "post"},
-        },
-    }
-    if uref0toNfminus1 is not None:
-        bruh[r"$T_{ref}$"] = {
-            "data": T_ref,
-            "curve_type": CurveType.REGULAR,
-            "curve_style": CurvePlotStyle.STEP,
-            "mpl_options": {"color": "blue", "linewidth": 2, "where": "post"},
-        }
-
     simulation_plot.add_subplot(
         row_idx=2,
         col_idx=1,
@@ -422,7 +408,20 @@ def plot_dyn6_control(
         subplot_type=SubplotType.TEMPORAL,
         unit="1",
         show_unit=False,
-        curves=bruh,
+        curves={
+            r"$T$": {
+                "data": T,
+                "curve_type": CurveType.REGULAR,
+                "curve_style": CurvePlotStyle.STEP,
+                "mpl_options": pred_options | {"where": "post"},
+            },
+            r"$T_{ref}$": {
+                "data": T_ref,
+                "curve_type": CurveType.REGULAR,
+                "curve_style": CurvePlotStyle.STEP,
+                "mpl_options": ref_options | {"where": "post"},
+            },
+        },
     )
     simulation_plot.add_subplot(
         row_idx=2,
@@ -436,7 +435,7 @@ def plot_dyn6_control(
                 "data": np.rad2deg(delta),
                 "curve_type": CurveType.REGULAR,
                 "curve_style": CurvePlotStyle.STEP,
-                "mpl_options": {"color": "red", "linewidth": 2, "where": "post"},
+                "mpl_options": pred_options | {"where": "post"},
             },
         },
     )
@@ -472,21 +471,6 @@ def plot_dyn6_control(
             },
         },
     )
-    bruh = {
-        r"$d\delta$": {
-            "data": np.rad2deg(ddelta),
-            "curve_type": CurveType.REGULAR,
-            "curve_style": CurvePlotStyle.STEP,
-            "mpl_options": {"color": "red", "linewidth": 2, "where": "post"},
-        },
-    }
-    if uref0toNfminus1 is not None:
-        bruh[r"$\delta_{ref}$"] = {
-            "data": np.rad2deg(ddelta_ref),
-            "curve_type": CurveType.REGULAR,
-            "curve_style": CurvePlotStyle.STEP,
-            "mpl_options": {"color": "blue", "linewidth": 2, "where": "post"},
-        }
     simulation_plot.add_subplot(
         row_idx=3,
         col_idx=1,
@@ -494,6 +478,19 @@ def plot_dyn6_control(
         subplot_type=SubplotType.TEMPORAL,
         unit="°/s",
         show_unit=True,
-        curves=bruh,
+        curves={
+            r"$d\delta$": {
+                "data": np.rad2deg(ddelta),
+                "curve_type": CurveType.REGULAR,
+                "curve_style": CurvePlotStyle.STEP,
+                "mpl_options": pred_options | {"where": "post"},
+            },
+            r"$d\delta_{ref}$": {
+                "data": np.rad2deg(ddelta_ref),
+                "curve_type": CurveType.REGULAR,
+                "curve_style": CurvePlotStyle.STEP,
+                "mpl_options": ref_options | {"where": "post"},
+            },
+        },
     )
     simulation_plot.plot(show=False)

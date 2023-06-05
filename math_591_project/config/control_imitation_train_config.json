@@ -15,10 +15,10 @@
             128
         ],
         "nonlinearity": "leaky_relu",
-        "from_checkpoint": true
+        "from_checkpoint": false
     },
     "training": {
-        "num_epochs": 1,
+        "num_epochs": 1000,
         "loss_weights": [
             1.0,
             100.0
