@@ -279,6 +279,7 @@ def main():
 
     # intialize lightning fabric ===============================================
     fabric = Fabric()
+    print("Fabric initialized with devices:", fabric.device)
 
     # initialize model and optimizer =========================================================
     match system_model_name:
@@ -387,7 +388,6 @@ def main():
         for file_path in os.listdir(data_dir)
         if file_path.endswith(".csv")
     ]
-    # file_paths = file_paths[:1]
     assert all([os.path.exists(path) for path in file_paths])
     train_dataloader, val_dataloader = get_control_loaders(
         file_paths, batch_sizes=(10000, 5000)
@@ -419,7 +419,7 @@ def main():
     print(
         f"sytem model output layer weight is the same: {torch.allclose(wbefore, wafter)}"
     )
-    print(wafter.grad)
+    print(f"grad is None: {wafter.grad is None}")
 
     # save model ================================================================
     fabric.save(

@@ -2,6 +2,7 @@
 import sys
 
 import matplotlib
+from matplotlib.widgets import EllipseSelector
 import numpy as np
 from data_visualization import *
 
@@ -324,6 +325,9 @@ def plot_dyn6_control(
     if uref0toNfminus1 is not None:
         T_ref = np.append(uref0toNfminus1[:, 0], np.nan)
         ddelta_ref = np.append(uref0toNfminus1[:, 1], np.nan)
+    else:
+        T_ref = np.full_like(T, np.nan)
+        ddelta_ref = np.full_like(ddelta, np.nan)
 
     ref_options = {"color": "blue", "linewidth": 2}
     pred_options = {"color": "red", "linewidth": 2}
