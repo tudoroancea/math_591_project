@@ -16,15 +16,14 @@ class MLP(nn.Module):
     ):
         super().__init__()
         assert len(nhidden) >= 1
-        match nonlinearity:
-            case "relu":
-                self.nonlinearity = nn.ReLU()
-            case "leaky_relu":
-                self.nonlinearity = nn.LeakyReLU()
-            case "tanh":
-                self.nonlinearity = nn.Tanh()
-            case _:
-                raise ValueError(f"nonlinearity {nonlinearity} not supported")
+        if nonlinearity == "relu":
+            self.nonlinearity = nn.ReLU()
+        elif nonlinearity == "leaky_relu":
+            self.nonlinearity = nn.LeakyReLU()
+        elif nonlinearity == "tanh":
+            self.nonlinearity = nn.Tanh()
+        else:
+            raise ValueError(f"nonlinearity {nonlinearity} not supported")
 
         di = {
             "batchnorm": nn.BatchNorm1d(nin),
