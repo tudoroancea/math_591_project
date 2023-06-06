@@ -69,6 +69,7 @@ def train(
     num_epochs: int = 10,
     with_wandb: bool = False,
 ):
+    ic(loss_weights)
     delta_max = torch.deg2rad(
         torch.tensor(
             40.0, dtype=torch.float32, requires_grad=False, device=control_model.device
@@ -336,7 +337,7 @@ def main():
     system_model.requires_grad_(False)
     system_model.eval()
     control_mlp = MLP(
-        nin=nx + (Nf + 1) * 4,
+        nin=nx - 3 + (Nf + 1) * 4,
         nout=nu * Nf,
         nhidden=config["control_model"]["nhidden"],
         nonlinearity=config["control_model"]["nonlinearity"],
