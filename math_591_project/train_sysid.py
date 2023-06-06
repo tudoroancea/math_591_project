@@ -176,6 +176,7 @@ def main():
 
     # intialize lightning fabric ===============================================
     fabric = Fabric()
+    print("Using device: ", fabric.device)
 
     # initialize model and optimizer =========================================================
     match model_name:

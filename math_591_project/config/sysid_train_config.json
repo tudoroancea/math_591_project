@@ -12,10 +12,10 @@
     "training": {
         "num_epochs": 1000,
         "loss_weights": [
-            1.0,
-            1.0,
-            1.0,
-            1.0
+            1000.0,
+            1000.0,
+            10000.0,
+            100.0
         ],
         "optimizer": {
             "name": "adamw",
