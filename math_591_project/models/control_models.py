@@ -422,7 +422,7 @@ class MLPControlPolicy(ControlPolicy):
             (
                 x0[:, 0, 3:],  # shape (batch_size, 2)
                 torch.cat(
-                    (XYloc.squeeze(), philoc.unsqueeze(2), xref0toNf[:, :, 3:]), dim=2
+                    (XYloc.squeeze(2), philoc.unsqueeze(2), xref0toNf[:, :, 3:]), dim=2
                 ).view(batch_size, -1),
             ),
             dim=1,
