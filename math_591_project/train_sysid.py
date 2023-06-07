@@ -161,10 +161,9 @@ def main():
     config = json.load(open(args.cfg_file, "r"))
     with_wandb = config.pop("with_wandb")
     print(f"Training " + ("with" if with_wandb else "without") + " wandb")
-    dt = 1 / 20
     model_name: str = config["model"]["name"]
     if model_name.startswith("blackbox"):
-        n_hidden = config["model"]["n_hidden"]
+        nhidden = config["model"]["n_hidden"]
         nonlinearity = config["model"]["nonlinearity"]
         from_checkpoint = config["model"]["from_checkpoint"]
 
@@ -176,6 +175,7 @@ def main():
     scheduler = scheduler_params.pop("name")
     train_dataset_path = config["data"]["train"]
     test_dataset_path = config["data"]["test"]
+    dt = 1 / 20
 
     # initialize wandb ==========================================
     if with_wandb:
@@ -190,36 +190,41 @@ def main():
     print("Using device: ", fabric.device)
 
     # initialize model and optimizer =========================================================
-    match model_name:
-        case "kin4":
-            nxtilde = KIN4_NXTILDE
-            nutilde = KIN4_NUTILDE
-            ode_t = Kin4ODE
-        case "dyn6":
-            nxtilde = DYN6_NXTILDE
-            nutilde = DYN6_NUTILDE
-            ode_t = Dyn6ODE
-        case "blackbox_kin4":
-            nxtilde = KIN4_NXTILDE
-            nutilde = KIN4_NUTILDE
-            nin = nxtilde + nutilde
-            nout = nxtilde
-            ode_t = BlackboxKin4ODE
-        case "blackbox_dyn6":
-            nxtilde = DYN6_NXTILDE
-            nutilde = DYN6_NUTILDE
-            nin = nxtilde + nutilde - 3
-            nout = nxtilde - 3
-            ode_t = BlackboxDyn6ODE
-        case _:
-            raise ValueError(f"Unknown model name: {model_name}")
+    # match model_name:
+    #     case "kin4":
+    #         nxtilde = KIN4_NXTILDE
+    #         nutilde = KIN4_NUTILDE
+    #         ode_t = Kin4ODE
+    #     case "dyn6":
+    #         nxtilde = DYN6_NXTILDE
+    #         nutilde = DYN6_NUTILDE
+    #         ode_t = Dyn6ODE
+    #     case "blackbox_kin4":
+    #         nxtilde = KIN4_NXTILDE
+    #         nutilde = KIN4_NUTILDE
+    #         nin = nxtilde + nutilde
+    #         nout = nxtilde
+    #         ode_t = BlackboxKin4ODE
+    #     case "blackbox_dyn6":
+    #         nxtilde = DYN6_NXTILDE
+    #         nutilde = DYN6_NUTILDE
+    #         nin = nxtilde + nutilde - 3
+    #         nout = nxtilde - 3
+    #         ode_t = BlackboxDyn6ODE
+    #     case _:
+    #         raise ValueError(f"Unknown model name: {model_name}")
+    dims = ode_dims[model_name]
+    if model_name.startswith("blackbox"):
+        ode_t, nxtilde, nutilde, nin, nout = dims
+    else:
+        ode_t, nxtilde, nutilde = dims
 
     system_model = OpenLoop(
         model=RK4(
             nxtilde=nxtilde,
             nutilde=nutilde,
             ode=ode_t(
-                net=MLP(nin=nin, nout=nout, nhidden=n_hidden, nonlinearity=nonlinearity)
+                net=MLP(nin=nin, nout=nout, nhidden=nhidden, nonlinearity=nonlinearity)
             )
             if model_name.startswith("blackbox")
             else ode_t(),
@@ -262,9 +267,7 @@ def main():
             scheduler_t = torch.optim.lr_scheduler.MultiStepLR
         case _:
             scheduler_t = None
-    scheduler = (
-        scheduler_t(optimizer, **scheduler_params) if scheduler_t else None
-    )
+    scheduler = scheduler_t(optimizer, **scheduler_params) if scheduler_t else None
 
     system_model, optimizer = fabric.setup(system_model, optimizer)
 
@@ -283,18 +286,23 @@ def main():
     )
 
     # Run training loop with validation =========================================
-    train(
-        fabric,
-        model_name,
-        system_model,
-        optimizer,
-        train_dataloader,
-        val_dataloader,
-        scheduler=scheduler,
-        num_epochs=num_epochs,
-        loss_weights=loss_weights,
-        with_wandb=with_wandb,
-    )
+    try:
+        train(
+            fabric,
+            model_name,
+            system_model,
+            optimizer,
+            train_dataloader,
+            val_dataloader,
+            scheduler=scheduler,
+            num_epochs=num_epochs,
+            loss_weights=loss_weights,
+            with_wandb=with_wandb,
+        )
+    except KeyboardInterrupt:
+        print(
+            "Training interrupted by ctrl+C, saving model and proceeding to evaluation"
+        )
 
     # save model ================================================================
     fabric.save(
@@ -315,7 +323,7 @@ def main():
             nxtilde=nxtilde,
             nutilde=nutilde,
             ode=ode_t(
-                net=MLP(nin=nin, nout=nout, nhidden=n_hidden, nonlinearity=nonlinearity)
+                net=MLP(nin=nin, nout=nout, nhidden=nhidden, nonlinearity=nonlinearity)
             )
             if model_name.startswith("blackbox")
             else ode_t(),

@@ -122,12 +122,12 @@ class Dyn6ODE(ODE):
         C_r0=0.0,
         C_r1=0.0,
         C_r2=3.5,
-        B_R=20.0,
-        C_R=0.8,
-        D_R=4.0,
-        B_F=17.0,
-        C_F=2.0,
-        D_F=4.2,
+        B_R=11.5,
+        C_R=1.98,
+        D_R=1.67,
+        B_F=11.5,
+        C_F=1.98,
+        D_F=1.67,
     ):
         super().__init__(nxtilde=DYN6_NXTILDE, nutilde=DYN6_NUTILDE)
         self.m = m

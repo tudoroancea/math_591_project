@@ -1,20 +1,49 @@
 # Copyright (c) 2023 Tudor Oancea
+import argparse
+import json
+import os
 
-
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from lightning import Fabric
 from matplotlib import pyplot as plt
+
 from math_591_project.data_utils import *
 from math_591_project.models import *
 from math_591_project.plot_utils import *
 
-def test():
-    # evaluate model on test set ================================================
-    # recreate open loop model with new Nf
+
+def main():
+    parser = argparse.ArgumentParser(description="arg parser")
+    parser.add_argument(
+        "--cfg_file",
+        type=str,
+        default="config/sysid_train_config.json",
+        help="specify the config for training",
+    )
+    args = parser.parse_args()
+
+    # set up parameters =========================================================
+    config = json.load(open(args.cfg_file, "r"))
+    model_name: str = config["model"]["name"]
+    if model_name.startswith("blackbox"):
+        n_hidden = config["model"]["n_hidden"]
+        nonlinearity = config["model"]["nonlinearity"]
+
+    test_dataset_path = config["data"]["test"]
+    testing_params = config["testing"]
+    num_samples = testing_params["num_samples"]
+    dt = 1 / 20
     Nf = 40
+
+    dims = ode_dims[model_name]
+    if model_name.startswith("blackbox"):
+        ode_t, nxtilde, nutilde, nin, nout = dims
+    else:
+        ode_t, nxtilde, nutilde = dims
+
+    fabric = Fabric()
+    print(f"Using {fabric.device} device")
+
     system_model = OpenLoop(
         model=RK4(
             nxtilde=nxtilde,
@@ -28,15 +57,21 @@ def test():
         ),
         Nf=Nf,
     )
-    system_model.load_state_dict(
+    system_model.model.ode.load_state_dict(
         torch.load(f"checkpoints/{model_name}_best.ckpt")["system_model"]
     )
     system_model = fabric.setup(system_model)
 
     # create test dataloader
+    data_dir = "data/" + test_dataset_path
+    file_paths = [
+        os.path.abspath(os.path.join(data_dir, file_path))
+        for file_path in os.listdir(data_dir)
+        if file_path.endswith(".csv")
+    ]
     test_dataset = SysidTestDataset(file_paths, Nf)
     test_dataloader = DataLoader(
-        test_dataset, batch_size=5, shuffle=True, num_workers=1
+        test_dataset, batch_size=num_samples, shuffle=True, num_workers=1
     )
     test_dataloader = fabric.setup_dataloaders(test_dataloader)
 
@@ -48,10 +83,10 @@ def test():
     utilde0toNfminus1 = utilde0toNfminus1.detach().cpu().numpy()
     xtilde1toNf = xtilde1toNf.detach().cpu().numpy()
     xtilde1toNf_p = xtilde1toNf_p.detach().cpu().numpy()
-    if not os.path.exists("plots"):
-        os.mkdir("plots")
-    plot_names = [f"plots/{model_name}_{i}.png" for i in range(5)]
-    for i in range(5):
+    if not os.path.exists("test_plots"):
+        os.mkdir("test_plots")
+    plot_names = [f"test_plots/{model_name}_{i}.png" for i in range(num_samples)]
+    for i in range(num_samples):
         (plot_kin4 if model_name.endswith("kin4") else plot_dyn6)(
             xtilde0=xtilde0[i],
             utilde0toNfminus1=utilde0toNfminus1[i],
@@ -60,10 +95,9 @@ def test():
             dt=dt,
         )
         plt.savefig(plot_names[i], dpi=300)
-    if with_wandb:
-        # log the plot to wandb
-        wandb.log(
-            {"plot/" + plot_name: wandb.Image(plot_name) for plot_name in plot_names}
-        )
 
     plt.show()
+
+
+if __name__ == "__main__":
+    main()

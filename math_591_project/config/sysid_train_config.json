@@ -27,6 +27,9 @@
             "name": "none"
         }
     },
+    "testing": {
+        "num_samples": 10
+    },
     "data": {
         "train": "train",
         "test": "test"
