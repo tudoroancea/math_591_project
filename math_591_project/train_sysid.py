@@ -22,7 +22,8 @@ L.seed_everything(127)
 def run_model(system_model, batch):
     xtilde0, utilde0toNfminus1, xtilde1toNf = batch
     xtilde1toNf_p = system_model(xtilde0, utilde0toNfminus1)
-    pose_loss = F.mse_loss(xtilde1toNf_p[..., :3], xtilde1toNf[..., :3])
+    XY_loss = F.mse_loss(xtilde1toNf_p[..., :2], xtilde1toNf[..., :2])
+    phi_loss = F.mse_loss(xtilde1toNf_p[..., 2], xtilde1toNf[..., 2])
     v_x_loss = F.mse_loss(xtilde1toNf_p[..., 3], xtilde1toNf[..., 3])
     if xtilde1toNf_p.shape[-1] > 4:
         v_y_loss = F.mse_loss(xtilde1toNf_p[..., 4], xtilde1toNf[..., 4])
@@ -30,7 +31,7 @@ def run_model(system_model, batch):
     else:
         v_y_loss = torch.tensor(0.0)
         r_loss = torch.tensor(0.0)
-    return pose_loss, v_x_loss, v_y_loss, r_loss
+    return XY_loss, phi_loss, v_x_loss, v_y_loss, r_loss
 
 
 def train(
@@ -42,7 +43,7 @@ def train(
     val_dataloader: torch.utils.data.DataLoader,
     scheduler: torch.optim.lr_scheduler.LRScheduler = None,
     num_epochs=10,
-    loss_weights=(1.0, 1.0, 1.0, 0.0),
+    loss_weights=[1.0, 1.0, 1.0, 1.0, 1.0],
     with_wandb=True,
 ):
     best_val_loss = np.inf
@@ -50,24 +51,29 @@ def train(
         system_model.train()
         train_losses = {
             "total": 0.0,
-            "pose": 0.0,
+            "XY": 0.0,
+            "phi": 0.0,
             "v_x": 0.0,
             "v_y": 0.0,
             "r": 0.0,
         }
         for batch in train_dataloader:
             optimizer.zero_grad()
-            pose_loss, v_x_loss, v_y_loss, r_loss = run_model(system_model, batch)
+            XY_loss, phi_loss, v_x_loss, v_y_loss, r_loss = run_model(
+                system_model, batch
+            )
             loss = (
-                loss_weights[0] * pose_loss
-                + loss_weights[1] * v_x_loss
-                + loss_weights[2] * v_y_loss
-                + loss_weights[3] * r_loss
+                loss_weights[0] * XY_loss
+                + loss_weights[1] * phi_loss
+                + loss_weights[2] * v_x_loss
+                + loss_weights[3] * v_y_loss
+                + loss_weights[4] * r_loss
             )
             fabric.backward(loss)
             optimizer.step()
             train_losses["total"] += loss.item()
-            train_losses["pose"] += pose_loss.item()
+            train_losses["XY"] += XY_loss.item()
+            train_losses["phi"] += phi_loss.item()
             train_losses["v_x"] += v_x_loss.item()
             train_losses["v_y"] += v_y_loss.item()
             train_losses["r"] += r_loss.item()
@@ -86,21 +92,26 @@ def train(
         system_model.eval()
         val_losses = {
             "total": 0.0,
-            "pose": 0.0,
+            "XY": 0.0,
+            "phi": 0.0,
             "v_x": 0.0,
             "v_y": 0.0,
             "r": 0.0,
         }
         for batch in val_dataloader:
             with torch.no_grad():
-                pose_loss, v_x_loss, v_y_loss, r_loss = run_model(system_model, batch)
+                XY_loss, phi_loss, v_x_loss, v_y_loss, r_loss = run_model(
+                    system_model, batch
+                )
             val_losses["total"] += (
-                loss_weights[0] * pose_loss
-                + loss_weights[1] * v_x_loss
-                + loss_weights[2] * v_y_loss
-                + loss_weights[3] * r_loss
+                loss_weights[0] * XY_loss
+                + loss_weights[1] * phi_loss
+                + loss_weights[2] * v_x_loss
+                + loss_weights[3] * v_y_loss
+                + loss_weights[4] * r_loss
             ).item()
-            val_losses["pose"] += pose_loss.item()
+            val_losses["XY"] += XY_loss.item()
+            val_losses["phi"] += phi_loss.item()
             val_losses["v_x"] += v_x_loss.item()
             val_losses["v_y"] += v_y_loss.item()
             val_losses["r"] += r_loss.item()
@@ -232,25 +243,27 @@ def main():
 
     match optimizer:
         case "sgd":
-            optimizer_type = torch.optim.SGD
+            optimizer_t = torch.optim.SGD
         case "adam":
-            optimizer_type = torch.optim.Adam
+            optimizer_t = torch.optim.Adam
         case "adamw":
-            optimizer_type = torch.optim.AdamW
+            optimizer_t = torch.optim.AdamW
+        case "lbfgs":
+            optimizer_t = torch.optim.LBFGS
         case _:
             raise NotImplementedError(f"Optimizer {optimizer} not implemented")
 
-    optimizer = optimizer_type(system_model.parameters(), **optimizer_params)
+    optimizer = optimizer_t(system_model.parameters(), **optimizer_params)
 
     match scheduler:
         case "steplr":
-            scheduler_type = torch.optim.lr_scheduler.StepLR
+            scheduler_t = torch.optim.lr_scheduler.StepLR
         case "multisteplr":
-            scheduler_type = torch.optim.lr_scheduler.MultiStepLR
+            scheduler_t = torch.optim.lr_scheduler.MultiStepLR
         case _:
-            scheduler_type = None
+            scheduler_t = None
     scheduler = (
-        scheduler_type(optimizer, **scheduler_params) if scheduler_type else None
+        scheduler_t(optimizer, **scheduler_params) if scheduler_t else None
     )
 
     system_model, optimizer = fabric.setup(system_model, optimizer)
