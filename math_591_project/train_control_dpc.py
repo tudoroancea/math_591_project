@@ -242,7 +242,7 @@ def main():
     parser.add_argument(
         "--cfg_file",
         type=str,
-        default="config/control_dpc_train_config.json",
+        default="config/blackbox_dyn6_control_dpc.json",
         help="specify the config for training",
     )
     parser.add_argument(

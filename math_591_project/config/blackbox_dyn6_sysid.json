@@ -10,21 +10,25 @@
         "from_checkpoint": false
     },
     "training": {
-        "num_epochs": 1000,
-        "loss_weights": [
-            1000.0,
-            1000.0,
-            1000.0,
-            10000.0,
-            100.0
-        ],
+        "num_epochs": 2000,
+        "loss_weights": {
+            "XY": 10.0,
+            "phi": 100.0,
+            "v_x": 50.0,
+            "v_y": 100.0,
+            "r": 1.0
+        },
         "optimizer": {
             "name": "adamw",
             "lr": 0.0005,
             "weight_decay": 0.05
         },
         "scheduler": {
-            "name": "none"
+            "name": "multisteplr",
+            "milestones": [
+                1000
+            ],
+            "gamma": 0.2
         }
     },
     "testing": {

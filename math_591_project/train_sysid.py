@@ -43,7 +43,7 @@ def train(
     val_dataloader: torch.utils.data.DataLoader,
     scheduler: torch.optim.lr_scheduler.LRScheduler = None,
     num_epochs=10,
-    loss_weights=[1.0, 1.0, 1.0, 1.0, 1.0],
+    loss_weights={"XY": 1.0, "phi": 1.0, "v_x": 1.0, "v_y": 1.0, "r": 1.0},
     with_wandb=True,
 ):
     best_val_loss = np.inf
@@ -63,11 +63,11 @@ def train(
                 system_model, batch
             )
             loss = (
-                loss_weights[0] * XY_loss
-                + loss_weights[1] * phi_loss
-                + loss_weights[2] * v_x_loss
-                + loss_weights[3] * v_y_loss
-                + loss_weights[4] * r_loss
+                loss_weights["XY"] * XY_loss
+                + loss_weights["phi"] * phi_loss
+                + loss_weights["v_x"] * v_x_loss
+                + loss_weights["v_y"] * v_y_loss
+                + loss_weights["r"] * r_loss
             )
             fabric.backward(loss)
             optimizer.step()
@@ -104,11 +104,11 @@ def train(
                     system_model, batch
                 )
             val_losses["total"] += (
-                loss_weights[0] * XY_loss
-                + loss_weights[1] * phi_loss
-                + loss_weights[2] * v_x_loss
-                + loss_weights[3] * v_y_loss
-                + loss_weights[4] * r_loss
+                loss_weights["XY"] * XY_loss
+                + loss_weights["phi"] * phi_loss
+                + loss_weights["v_x"] * v_x_loss
+                + loss_weights["v_y"] * v_y_loss
+                + loss_weights["r"] * r_loss
             ).item()
             val_losses["XY"] += XY_loss.item()
             val_losses["phi"] += phi_loss.item()
@@ -152,8 +152,8 @@ def main():
     parser.add_argument(
         "--cfg_file",
         type=str,
-        default="config/sysid_train_config.json",
-        help="specify the config for training",
+        default="config/blackbox_dyn6_sysid.json",
+        help="specify the config file used for training",
     )
     args = parser.parse_args()
 
@@ -190,29 +190,6 @@ def main():
     print("Using device: ", fabric.device)
 
     # initialize model and optimizer =========================================================
-    # match model_name:
-    #     case "kin4":
-    #         nxtilde = KIN4_NXTILDE
-    #         nutilde = KIN4_NUTILDE
-    #         ode_t = Kin4ODE
-    #     case "dyn6":
-    #         nxtilde = DYN6_NXTILDE
-    #         nutilde = DYN6_NUTILDE
-    #         ode_t = Dyn6ODE
-    #     case "blackbox_kin4":
-    #         nxtilde = KIN4_NXTILDE
-    #         nutilde = KIN4_NUTILDE
-    #         nin = nxtilde + nutilde
-    #         nout = nxtilde
-    #         ode_t = BlackboxKin4ODE
-    #     case "blackbox_dyn6":
-    #         nxtilde = DYN6_NXTILDE
-    #         nutilde = DYN6_NUTILDE
-    #         nin = nxtilde + nutilde - 3
-    #         nout = nxtilde - 3
-    #         ode_t = BlackboxDyn6ODE
-    #     case _:
-    #         raise ValueError(f"Unknown model name: {model_name}")
     dims = ode_dims[model_name]
     if model_name.startswith("blackbox"):
         ode_t, nxtilde, nutilde, nin, nout = dims
@@ -253,8 +230,6 @@ def main():
             optimizer_t = torch.optim.Adam
         case "adamw":
             optimizer_t = torch.optim.AdamW
-        case "lbfgs":
-            optimizer_t = torch.optim.LBFGS
         case _:
             raise NotImplementedError(f"Optimizer {optimizer} not implemented")
 
@@ -267,6 +242,7 @@ def main():
             scheduler_t = torch.optim.lr_scheduler.MultiStepLR
         case _:
             scheduler_t = None
+
     scheduler = scheduler_t(optimizer, **scheduler_params) if scheduler_t else None
 
     system_model, optimizer = fabric.setup(system_model, optimizer)

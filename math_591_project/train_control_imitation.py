@@ -111,7 +111,7 @@ def main():
     parser.add_argument(
         "--cfg_file",
         type=str,
-        default="config/control_imitation_train_config.json",
+        default="config/blackbox_dyn6_control_imitation.json",
         help="specify the config for training",
     )
     args = parser.parse_args()
