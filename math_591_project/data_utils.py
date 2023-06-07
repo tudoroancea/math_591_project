@@ -196,13 +196,23 @@ class ControlDataset(Dataset):
         return self.x0[idx], self.xref0toNf[idx], self.uref0toNfminus1[idx]
 
 
-def get_sysid_loaders(file_paths: list[str]):
-    d = SysidTrainDataset(file_paths)
+def get_sysid_loaders(file_paths: list[str], batch_sizes=(0, 0), Nf=1):
+    d = SysidDataset(file_paths, Nf)
     train_data, val_data = random_split(
         d, [int(len(d) * 0.8), len(d) - int(len(d) * 0.8)]
     )
-    train_loader = DataLoader(train_data, batch_size=len(train_data), shuffle=True)
-    val_loader = DataLoader(val_data, batch_size=len(val_data), shuffle=True)
+    train_loader = DataLoader(
+        train_data,
+        batch_size=len(train_data) if batch_sizes[0] == 0 else batch_sizes[0],
+        shuffle=True,
+        num_workers=4,
+    )
+    val_loader = DataLoader(
+        val_data,
+        batch_size=len(val_data) if batch_sizes[1] == 0 else batch_sizes[1],
+        shuffle=True,
+        num_workers=4,
+    )
     return train_loader, val_loader
 
 

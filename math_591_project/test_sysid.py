@@ -33,7 +33,7 @@ def main():
     testing_params = config["testing"]
     num_samples = testing_params["num_samples"]
     dt = 1 / 20
-    Nf = 40
+    test_Nf = testing_params["Nf"]
 
     dims = ode_dims[model_name]
     if model_name.startswith("blackbox"):
@@ -55,7 +55,7 @@ def main():
             else ode_t(),
             dt=dt,
         ),
-        Nf=Nf,
+        Nf=test_Nf,
     )
     system_model.model.ode.load_state_dict(
         torch.load(f"checkpoints/{model_name}_best.ckpt")["system_model"]
@@ -69,7 +69,7 @@ def main():
         for file_path in os.listdir(data_dir)
         if file_path.endswith(".csv")
     ]
-    test_dataset = SysidTestDataset(file_paths, Nf)
+    test_dataset = SysidTestDataset(file_paths, test_Nf)
     test_dataloader = DataLoader(
         test_dataset, batch_size=num_samples, shuffle=True, num_workers=1
     )

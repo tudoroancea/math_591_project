@@ -10,12 +10,13 @@
         "from_checkpoint": false
     },
     "training": {
-        "num_epochs": 2000,
+        "num_epochs": 10,
+        "Nf": 10,
         "loss_weights": {
-            "XY": 10.0,
-            "phi": 100.0,
-            "v_x": 50.0,
-            "v_y": 100.0,
+            "XY": 1.0,
+            "phi": 1.0,
+            "v_x": 1.0,
+            "v_y": 1.0,
             "r": 1.0
         },
         "optimizer": {
@@ -32,11 +33,12 @@
         }
     },
     "testing": {
-        "num_samples": 10
+        "num_samples": 10,
+        "Nf": 40
     },
     "data": {
         "train": "train",
         "test": "test"
     },
-    "with_wandb": true
+    "with_wandb": false
 }

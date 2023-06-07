@@ -7,6 +7,7 @@ from copy import copy
 import lightning as L
 import torch
 import torch.nn.functional as F
+import torch._dynamo
 import wandb
 from lightning import Fabric
 from matplotlib import pyplot as plt
@@ -176,6 +177,8 @@ def main():
     train_dataset_path = config["data"]["train"]
     test_dataset_path = config["data"]["test"]
     dt = 1 / 20
+    train_Nf = config["training"]["Nf"]
+    test_Nf = config["testing"]["Nf"]
 
     # initialize wandb ==========================================
     if with_wandb:
@@ -207,7 +210,7 @@ def main():
             else ode_t(),
             dt=dt,
         ),
-        Nf=1,
+        Nf=train_Nf,
     )
     if with_wandb:
         wandb.watch(system_model, log_freq=1)
@@ -256,7 +259,9 @@ def main():
         if file_path.endswith(".csv")
     ]
     assert all([os.path.exists(path) for path in file_paths])
-    train_dataloader, val_dataloader = get_sysid_loaders(file_paths)
+    train_dataloader, val_dataloader = get_sysid_loaders(
+        file_paths, batch_sizes=(1000, 1000), Nf=train_Nf,
+    )
     train_dataloader, val_dataloader = fabric.setup_dataloaders(
         train_dataloader, val_dataloader
     )
@@ -293,7 +298,6 @@ def main():
 
     # evaluate model on test set ================================================
     # recreate open loop model with new Nf
-    Nf = 40
     system_model = OpenLoop(
         model=RK4(
             nxtilde=nxtilde,
@@ -305,7 +309,7 @@ def main():
             else ode_t(),
             dt=dt,
         ),
-        Nf=Nf,
+        Nf=test_Nf,
     )
     system_model.model.ode.load_state_dict(
         torch.load(f"checkpoints/{model_name}_best.ckpt")["system_model"]
@@ -319,7 +323,7 @@ def main():
         for file_path in os.listdir(data_dir)
         if file_path.endswith(".csv")
     ]
-    test_dataset = SysidTestDataset(file_paths, Nf)
+    test_dataset = SysidTestDataset(file_paths, test_Nf)
     test_dataloader = DataLoader(
         test_dataset, batch_size=5, shuffle=True, num_workers=1
     )
