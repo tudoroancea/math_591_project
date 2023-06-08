@@ -17,8 +17,8 @@ def main():
     parser.add_argument(
         "--cfg_file",
         type=str,
-        default="config/sysid_train_config.json",
-        help="specify the config for training",
+        default="config/blackbox_dyn6_sysid.json",
+        help="specify the config for testing",
     )
     args = parser.parse_args()
 
@@ -58,7 +58,7 @@ def main():
         Nf=test_Nf,
     )
     system_model.model.ode.load_state_dict(
-        torch.load(f"checkpoints/{model_name}_best.ckpt")["system_model"]
+        torch.load(f"checkpoints/{model_name}_best.ckpt", map_location="cpu")["system_model"]
     )
     system_model = fabric.setup(system_model)
 
