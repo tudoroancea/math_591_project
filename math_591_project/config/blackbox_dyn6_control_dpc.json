@@ -19,6 +19,7 @@
     },
     "training": {
         "num_epochs": 500,
+        "batch_size": 20000,
         "loss_weights": {
             "q_XY": 100.0,
             "q_phi": 200.0,

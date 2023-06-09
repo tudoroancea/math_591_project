@@ -268,6 +268,7 @@ def main():
     train_dataset_path = config["data"]["train"]
     test_dataset_path = config["data"]["test"]
     loss_weights = config["training"]["loss_weights"]
+    train_val_batch_size = config["training"]["batch_size"]
 
     # initialize wandb ==========================================
     if with_wandb:
@@ -390,7 +391,7 @@ def main():
     ]
     assert all([os.path.exists(path) for path in file_paths])
     train_dataloader, val_dataloader = get_control_loaders(
-        file_paths, batch_sizes=(10000, 5000)
+        file_paths, batch_sizes=(train_val_batch_size, train_val_batch_size)
     )
     train_dataloader, val_dataloader = fabric.setup_dataloaders(
         train_dataloader, val_dataloader

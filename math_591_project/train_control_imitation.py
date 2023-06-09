@@ -139,6 +139,7 @@ def main():
     scheduler = scheduler_params.pop("name")
     train_dataset_path = config["data"]["train"]
     test_dataset_path = config["data"]["test"]
+    train_val_batch_size = config["data"]["batch_size"]
 
     # initialize wandb ==========================================
     if with_wandb:
@@ -226,7 +227,9 @@ def main():
         if file_path.endswith(".csv")
     ]
     assert all([os.path.exists(path) for path in file_paths])
-    train_dataloader, val_dataloader = get_control_loaders(file_paths)
+    train_dataloader, val_dataloader = get_control_loaders(
+        file_paths, batch_sizes=(train_val_batch_size, train_val_batch_size)
+    )
     train_dataloader, val_dataloader = fabric.setup_dataloaders(
         train_dataloader, val_dataloader
     )

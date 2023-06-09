@@ -205,13 +205,13 @@ def get_sysid_loaders(file_paths: list[str], batch_sizes=(0, 0), Nf=1):
         train_data,
         batch_size=len(train_data) if batch_sizes[0] == 0 else batch_sizes[0],
         shuffle=True,
-        num_workers=4,
+        num_workers=8,
     )
     val_loader = DataLoader(
         val_data,
         batch_size=len(val_data) if batch_sizes[1] == 0 else batch_sizes[1],
         shuffle=True,
-        num_workers=4,
+        num_workers=8,
     )
     return train_loader, val_loader
 

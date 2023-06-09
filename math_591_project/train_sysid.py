@@ -179,6 +179,7 @@ def main():
     dt = 1 / 20
     train_Nf = config["training"]["Nf"]
     test_Nf = config["testing"]["Nf"]
+    train_val_batch_size = config["training"]["batch_size"]
 
     # initialize wandb ==========================================
     if with_wandb:
@@ -260,7 +261,7 @@ def main():
     ]
     assert all([os.path.exists(path) for path in file_paths])
     train_dataloader, val_dataloader = get_sysid_loaders(
-        file_paths, batch_sizes=(1000, 1000), Nf=train_Nf,
+        file_paths, batch_sizes=(train_val_batch_size, train_val_batch_size), Nf=train_Nf,
     )
     train_dataloader, val_dataloader = fabric.setup_dataloaders(
         train_dataloader, val_dataloader

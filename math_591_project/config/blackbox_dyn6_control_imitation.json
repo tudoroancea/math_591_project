@@ -19,6 +19,7 @@
     },
     "training": {
         "num_epochs": 1000,
+        "batch_size": 10000,
         "loss_weights": [
             1.0,
             100.0

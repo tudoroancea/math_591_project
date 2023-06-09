@@ -10,11 +10,12 @@
         "from_checkpoint": false
     },
     "training": {
-        "num_epochs": 10,
+        "num_epochs": 500,
         "Nf": 10,
+        "batch_size": 30000,
         "loss_weights": {
             "XY": 1.0,
-            "phi": 1.0,
+            "phi": 10.0,
             "v_x": 1.0,
             "v_y": 1.0,
             "r": 1.0
@@ -40,5 +41,5 @@
         "train": "train",
         "test": "test"
     },
-    "with_wandb": false
+    "with_wandb": true
 }
