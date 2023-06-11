@@ -1,5 +1,7 @@
-data
-data.zip
+data*
+!data_utils.py
+!data_misc.py
+processed
 checkpoints
 plots
 wandb

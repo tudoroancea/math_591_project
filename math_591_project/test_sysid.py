@@ -96,7 +96,7 @@ def main():
         )
         plt.savefig(plot_names[i], dpi=300)
 
-    plt.show()
+    # plt.show()
 
 
 if __name__ == "__main__":
