@@ -19,5 +19,3 @@ ode_dims = {
         DYN6_NXTILDE - 3,
     ),
 }
-
-

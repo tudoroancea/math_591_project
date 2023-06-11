@@ -36,4 +36,7 @@ for file in os.listdir("data/sysid/dimanche"):
         # )
         # # XY = XY - XY_0
         # df[["X", "Y"]] = XY
-        df.to_csv("data/sysid/portes_ouvertes_dyn6/dimanche" + file.removesuffix(".csv"), index=False)
+        df.to_csv(
+            "data/sysid/portes_ouvertes_dyn6/dimanche" + file.removesuffix(".csv"),
+            index=False,
+        )

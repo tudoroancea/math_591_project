@@ -39,6 +39,7 @@
         }
     },
     "data": {
+        "dir": "data",
         "train": "train",
         "test": "test"
     },

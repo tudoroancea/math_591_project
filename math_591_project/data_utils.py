@@ -42,8 +42,10 @@ def load_data(file_path: str, format="numpy") -> torch.Tensor:
         + ["last_delta"]
     )
     x = df[x_cols].to_numpy()
-    # make 3rd column continuous
+
+    # make phi values continuous
     x[:, 2] = unwrapToPi(x[:, 2])
+
     Nf = int(df.columns[-1].split("_")[-1]) + 1
     x_ref_cols = []
     u_ref_cols = []
@@ -98,28 +100,6 @@ class SysidDataset(Dataset):
         self.xtilde1toNf = torch.stack(xtilde1toNf)
         self.Nf = Nf
 
-        # translate to origin and rotate so that the initial heading is pi/2
-        # position0 = self.xtilde0[:, :, :2]  # shape (N, 1, 2)
-        # rot_angle = torch.pi / 2 - self.xtilde0[:, :, 2]
-        # rot_matrix = torch.stack(
-        #     (
-        #         torch.stack((torch.cos(rot_angle), torch.sin(rot_angle)), dim=2),
-        #         torch.stack((-torch.sin(rot_angle), torch.cos(rot_angle)), dim=2),
-        #     ),
-        #     dim=2,
-        # )
-
-        # self.xtilde0[:, :, :2] -= position0
-        # self.xtilde0[:, :, 2] += rot_angle
-        # self.xtilde0[:, :, :2] = torch.matmul(
-        #     self.xtilde0[:, :, :2].unsqueeze(2), rot_matrix
-        # ).squeeze(2)
-        # self.xtilde1toNf[:, :, :2] -= position0
-        # self.xtilde1toNf[:, :, 2] += rot_angle
-        # self.xtilde1toNf[:, :, :2] = torch.matmul(
-        #     self.xtilde1toNf[:, :, :2].unsqueeze(2), rot_matrix
-        # ).squeeze(2)
-
     def __len__(self) -> int:
         return self.xtilde0.shape[0]
 
@@ -157,6 +137,7 @@ class ControlDataset(Dataset):
             x0.extend([x[i : i + 1] for i in idx])
             tpr = [xref[i].reshape(Nf + 1, -1) for i in idx]
             for i in idx:
+                # project phi_ref to (phi-pi, phi+pi]
                 offset = x[i, 2] - torch.pi
                 tpr[i][:, 2] = teds_projection(tpr[i][:, 2], offset)
 
@@ -166,28 +147,6 @@ class ControlDataset(Dataset):
         self.x0 = torch.stack(x0)
         self.xref0toNf = torch.stack(xref0toNf)
         self.uref0toNfminus1 = torch.stack(uref0toNfminus1)
-
-        # translate to origin and rotate so that the initial heading is pi/2
-        # position0 = self.x0[:, :, :2]  # shape (N, 1, 2)
-        # rot_angle = torch.pi / 2 - self.x0[:, :, 2]  # shape (N, 1)
-        # rot_matrix = torch.stack(
-        #     (
-        #         torch.stack((torch.cos(rot_angle), torch.sin(rot_angle)), dim=2),
-        #         torch.stack((-torch.sin(rot_angle), torch.cos(rot_angle)), dim=2),
-        #     ),
-        #     dim=3,
-        # )  # shape (N,1,2,2)
-
-        # self.x0[:, :, :2] -= position0
-        # self.x0[:, :, 2] += rot_angle
-        # self.x0[:, :, :2] = torch.matmul(
-        #     self.x0[:, :, :2].unsqueeze(2), rot_matrix
-        # ).squeeze(2)
-        # self.xref0toNf[:, :, :2] -= position0
-        # self.xref0toNf[:, :, 2] += rot_angle
-        # self.xref0toNf[:, :, :2] = torch.matmul(
-        #     self.xref0toNf[:, :, :2].unsqueeze(2), rot_matrix
-        # ).squeeze(2)
 
     def __len__(self) -> int:
         return self.x0.shape[0]

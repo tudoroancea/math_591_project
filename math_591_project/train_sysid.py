@@ -174,6 +174,7 @@ def main():
     optimizer = optimizer_params.pop("name")
     scheduler_params = config["training"]["scheduler"]
     scheduler = scheduler_params.pop("name")
+    data_dir = config["data"]["dir"]
     train_dataset_path = config["data"]["train"]
     test_dataset_path = config["data"]["test"]
     dt = 1 / 20
@@ -253,15 +254,17 @@ def main():
 
     # load data ================================================================
     # load all CSV files in data/sysid
-    data_dir = "data/" + train_dataset_path
+    train_data_dir = os.path.join(data_dir, train_dataset_path)
     file_paths = [
-        os.path.abspath(os.path.join(data_dir, file_path))
-        for file_path in os.listdir(data_dir)
+        os.path.abspath(os.path.join(train_data_dir, file_path))
+        for file_path in os.listdir(train_data_dir)
         if file_path.endswith(".csv")
     ]
     assert all([os.path.exists(path) for path in file_paths])
     train_dataloader, val_dataloader = get_sysid_loaders(
-        file_paths, batch_sizes=(train_val_batch_size, train_val_batch_size), Nf=train_Nf,
+        file_paths,
+        batch_sizes=(train_val_batch_size, train_val_batch_size),
+        Nf=train_Nf,
     )
     train_dataloader, val_dataloader = fabric.setup_dataloaders(
         train_dataloader, val_dataloader
@@ -318,10 +321,10 @@ def main():
     system_model = fabric.setup(system_model)
 
     # create test dataloader
-    data_dir = "data/" + test_dataset_path
+    test_data_dir = os.path.join(data_dir, test_dataset_path)
     file_paths = [
-        os.path.abspath(os.path.join(data_dir, file_path))
-        for file_path in os.listdir(data_dir)
+        os.path.abspath(os.path.join(test_data_dir, file_path))
+        for file_path in os.listdir(test_data_dir)
         if file_path.endswith(".csv")
     ]
     test_dataset = SysidTestDataset(file_paths, test_Nf)
