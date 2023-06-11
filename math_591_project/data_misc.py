@@ -151,18 +151,31 @@ def preprocess_data_portes_ouvertes():
                 timestamps.reshape(-1, 1),
                 x[:, :6],
                 last_delta.reshape(-1, 1),
-                np.zeros((x.shape[0], 4 * 40)),
+                np.zeros((x.shape[0], 4 * 41)),
                 T.reshape(-1, 1),
                 ddelta.reshape(-1, 1),
+                np.zeros((x.shape[0], 2 * 39)),
             ),
             axis=1,
         )
-        np.savetxt(new_file_path, to_write, header=header, delimiter=",", fmt="%.15g")
+        np.savetxt(
+            new_file_path,
+            to_write,
+            header=header,
+            delimiter=",",
+            fmt="%.15g",
+            comments="",
+        )
 
     # now create two directories train and test and fill them with 90% and 10% of the data respectively
     # (move the files, don't copy them)
     train_dir = f"{output_dir}/train"
     test_dir = f"{output_dir}/test"
+    # first remove the directories if they exist
+    if os.path.exists(train_dir):
+        shutil.rmtree(train_dir)
+    if os.path.exists(test_dir):
+        shutil.rmtree(test_dir)
     os.makedirs(train_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
     train_idx = np.random.choice(
