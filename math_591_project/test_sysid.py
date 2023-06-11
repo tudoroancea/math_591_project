@@ -29,7 +29,7 @@ def main():
         n_hidden = config["model"]["n_hidden"]
         nonlinearity = config["model"]["nonlinearity"]
 
-    test_dataset_path = config["data"]["test"]
+    data_dir = os.path.join(config["data"]["dir"], config["data"]["test"])
     testing_params = config["testing"]
     num_samples = testing_params["num_samples"]
     dt = 1 / 20
@@ -65,7 +65,6 @@ def main():
     system_model = fabric.setup(system_model)
 
     # create test dataloader
-    data_dir = "data/" + test_dataset_path
     file_paths = [
         os.path.abspath(os.path.join(data_dir, file_path))
         for file_path in os.listdir(data_dir)
