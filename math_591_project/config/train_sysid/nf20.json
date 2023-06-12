@@ -1,13 +1,19 @@
 {
     "model": {
-        "name": "dyn6",
+        "name": "blackbox_dyn6",
+        "n_hidden": [
+            128,
+            128,
+            128
+        ],
+        "nonlinearity": "leaky_relu",
         "from_checkpoint": false,
         "checkpoint_path": ""
     },
     "training": {
         "num_epochs": 500,
-        "Nf": 10,
-        "batch_size": 45000,
+        "Nf": 20,
+        "batch_size": 20000,
         "loss_weights": {
             "XY": 1.0,
             "phi": 10.0,
@@ -17,7 +23,7 @@
         },
         "optimizer": {
             "name": "adamw",
-            "lr": 0.1,
+            "lr": 0.0005,
             "weight_decay": 0.05
         },
         "scheduler": {

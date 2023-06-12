@@ -163,7 +163,7 @@ class Dyn6ODE(ODE):
             self.C_R
             * torch.atan(
                 self.B_R
-                * torch.arctan(
+                * torch.atan(
                     (xtilde[:, 4] - self.l_R * xtilde[:, 5]) / (1e-6 + xtilde[:, 3])
                 )
             )
@@ -173,7 +173,7 @@ class Dyn6ODE(ODE):
             * torch.atan(
                 self.B_F
                 * (
-                    torch.arctan(
+                    torch.atan(
                         (xtilde[:, 4] + self.l_F * xtilde[:, 5]) / (1e-6 + xtilde[:, 3])
                     )
                     - utilde[:, 1]
