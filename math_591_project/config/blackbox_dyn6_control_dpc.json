@@ -6,7 +6,8 @@
             128,
             128
         ],
-        "nonlinearity": "leaky_relu"
+        "nonlinearity": "leaky_relu",
+        "checkpoint_path": "checkpoints/blackbox_dyn6/nf10.ckpt"
     },
     "control_model": {
         "nhidden": [
@@ -15,16 +16,17 @@
             128
         ],
         "nonlinearity": "leaky_relu",
-        "from_checkpoint": false
+        "from_checkpoint": true,
+        "checkpoint_path": "checkpoints/blackbox_dyn6_control_best.ckpt"
     },
     "training": {
         "num_epochs": 500,
-        "batch_size": 20000,
+        "batch_size": 10000,
         "loss_weights": {
             "q_XY": 100.0,
             "q_phi": 200.0,
-            "q_v_x": 1.0,
-            "q_T": 10.0,
+            "q_v_x": 10.0,
+            "q_T": 100.0,
             "q_delta": 200.0,
             "q_ddelta": 100.0,
             "q_s": 100.0
@@ -39,7 +41,7 @@
         }
     },
     "data": {
-        "dir": "data",
+        "dir": "data_v1.1.0",
         "train": "train",
         "test": "test"
     },

@@ -398,9 +398,13 @@ class MLPControlPolicy(ControlPolicy):
         """
         super().forward(x0, xref0toNf)
         batch_size = x0.shape[0]
+
+        # move output_scaling to the same device as x0 (only done once)
+        # (we can't do it in __init__ because we don't know the device of x0 at this time)
         if self.output_scaling.device != x0.device:
             self.output_scaling = self.output_scaling.to(x0.device)
 
+        # compute input of mlp as the transformation of the reference poses into the local frame of the first pose
         philoc = xref0toNf[:, :, 2] - x0[:, :, 2]  # shape (batch_size, Nf+1)
         rot_matrix = torch.stack(
             (
@@ -413,7 +417,6 @@ class MLPControlPolicy(ControlPolicy):
             ),
             dim=3,
         )  # shape (batch_size, Nf+1, 2, 2)
-
         XYloc = torch.matmul(
             torch.unsqueeze(xref0toNf[:, :, :2] - x0[:, :, :2], dim=2),
             rot_matrix,
@@ -428,6 +431,7 @@ class MLPControlPolicy(ControlPolicy):
             dim=1,
         )
 
+        # apply mlp and scale and reshape output
         return (
             F.tanh(self.mlp(input)).view(batch_size, self.Nf, self.nu)
             * self.output_scaling

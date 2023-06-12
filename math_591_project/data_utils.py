@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
+from icecream import ic
 
 
 def teds_projection(x: Union[np.ndarray, torch.Tensor], a):
@@ -21,6 +22,7 @@ def wrapToPi(x):
 
 def unwrapToPi(x: Union[np.ndarray, torch.Tensor]):
     # remove discontinuities caused by wrapToPi
+    assert x.ndim == 1, "x must be 1D"
     if isinstance(x, np.ndarray):
         diffs = np.diff(x)
         diffs[diffs > 1.5 * np.pi] -= 2 * np.pi
@@ -30,12 +32,19 @@ def unwrapToPi(x: Union[np.ndarray, torch.Tensor]):
         diffs = torch.diff(x)
         diffs[diffs > 1.5 * np.pi] -= 2 * np.pi
         diffs[diffs < -1.5 * np.pi] += 2 * np.pi
-        return torch.insert(x[0] + torch.cumsum(diffs), 0, x[0])
+        return torch.cat(
+            (torch.atleast_1d(x[0]), x[0] + torch.cumsum(diffs, dim=0)), dim=0
+        )
 
 
 def load_data(file_path: str, format="numpy") -> torch.Tensor:
+    # import data from csv file
     df = pd.read_csv(file_path)
+
+    # read timestamps
     timestamps = df["timestamp"].to_numpy()
+
+    # read state x=(X, Y, phi, v_x, v_y, r, last_delta)
     x_cols = (
         ["X", "Y", "phi", "v_x"]
         + (["v_y", "r"] if "v_y" in df.columns and "r" in df.columns else [])
@@ -44,30 +53,36 @@ def load_data(file_path: str, format="numpy") -> torch.Tensor:
     x = df[x_cols].to_numpy()
 
     # make phi values continuous
-    x[:, 2] = unwrapToPi(x[:, 2])
+    # x[:, 2] = unwrapToPi(x[:, 2])
+    x[:, 2] = wrapToPi(x[:, 2])
 
+    # read reference trajectory xref=(X_ref, Y_ref, phi_ref, v_x_ref) and control inputs u_ref=(T, ddelta)
     Nf = int(df.columns[-1].split("_")[-1]) + 1
-    x_ref_cols = []
-    u_ref_cols = []
+    xref_cols = []
+    uref_cols = []
     for i in range(Nf):
-        x_ref_cols.extend([f"X_ref_{i}", f"Y_ref_{i}", f"phi_ref_{i}", f"v_x_ref_{i}"])
-        u_ref_cols.extend([f"T_{i}", f"ddelta_{i}"])
-    x_ref_cols.extend([f"X_ref_{Nf}", f"Y_ref_{Nf}", f"phi_ref_{Nf}", f"v_x_ref_{Nf}"])
-    x_ref = df[x_ref_cols].to_numpy()
-    u_ref = df[u_ref_cols].to_numpy()
+        xref_cols.extend([f"X_ref_{i}", f"Y_ref_{i}", f"phi_ref_{i}", f"v_x_ref_{i}"])
+        uref_cols.extend([f"T_{i}", f"ddelta_{i}"])
+    xref_cols.extend([f"X_ref_{Nf}", f"Y_ref_{Nf}", f"phi_ref_{Nf}", f"v_x_ref_{Nf}"])
+    xref = df[xref_cols].to_numpy()
+    xref[:, 2] = wrapToPi(xref[:, 2])
+    uref = df[uref_cols].to_numpy()
+
+    # convert to torch tensors if desired
     if format == "torch":
         timestamps = torch.from_numpy(timestamps).to(dtype=torch.float32)
         x = torch.from_numpy(x).to(dtype=torch.float32)
-        x_ref = torch.from_numpy(x_ref).to(dtype=torch.float32)
-        u_ref = torch.from_numpy(u_ref).to(dtype=torch.float32)
+        xref = torch.from_numpy(xref).to(dtype=torch.float32)
+        uref = torch.from_numpy(uref).to(dtype=torch.float32)
 
-    # find first index where v_x > 0.5 and only keep data after that
+    # find first index where v_x > 0.01 and only keep data after that
     idx = np.where(x[:, 3] > 0.01)[0][0]
     timestamps = timestamps[idx:]
     x = x[idx:]
-    x_ref = x_ref[idx:]
-    u_ref = u_ref[idx:]
-    return timestamps, x, x_ref, u_ref
+    xref = xref[idx:]
+    uref = uref[idx:]
+
+    return timestamps, x, xref, uref
 
 
 class SysidDataset(Dataset):
@@ -81,14 +96,27 @@ class SysidDataset(Dataset):
         assert Nf >= 1, "Nf must be greater than or equal to 1 but is {Nf}"
         xtilde0, utilde0toNfminus1, xtilde1toNf = [], [], []
         for path in file_paths:
-            _, x, _, u_ref = load_data(path, format="torch")
+            _, x, _, uref = load_data(path, format="torch")
             idx = torch.arange(0, x.shape[0] - Nf)
-            xtilde0.extend([x[i : i + 1, :-1] for i in idx])
-            xtilde1toNf.extend([x[i + 1 : i + 1 + Nf, :-1] for i in idx])
+            tpr1 = [x[i : i + 1, :-1] for i in idx]
+            tpr2 = [x[i + 1 : i + 1 + Nf, :-1] for i in idx]
+            for i in idx:
+                phi = x[i : i + 1 + Nf, 2]
+                phi = unwrapToPi(phi)
+                x[i : i + 1 + Nf, 2] = phi
+                tpr1[i][0, 2] = phi[0]
+                tpr2[i][:, 2] = phi[1:]
+                # x[i:i + 1 + Nf, 2] = wrapToPi(x[i:i + 1 + Nf, 2])
+                # x[i : i + 1 + Nf, 2] = unwrapToPi(x[i : i + 1 + Nf, 2])
+                # xtilde0.append(x[i : i + 1, :-1])
+                # xtilde1toNf.append(x[i + 1 : i + 1 + Nf, :-1])
+
+            xtilde0.extend(tpr1)
+            xtilde1toNf.extend(tpr2)
             utilde0toNfminus1.extend(
                 [
                     torch.stack(
-                        (u_ref[i : i + Nf, 0], x[i : i + Nf, 4] + u_ref[i : i + Nf, 1]),
+                        (uref[i : i + Nf, 0], x[i : i + Nf, 4] + uref[i : i + Nf, 1]),
                         dim=1,
                     )
                     for i in idx
@@ -138,8 +166,8 @@ class ControlDataset(Dataset):
             tpr = [xref[i].reshape(Nf + 1, -1) for i in idx]
             for i in idx:
                 # project phi_ref to (phi-pi, phi+pi]
-                offset = x[i, 2] - torch.pi
-                tpr[i][:, 2] = teds_projection(tpr[i][:, 2], offset)
+                tpr[i][:, 2] = teds_projection(tpr[i][:, 2], x[i, 2] - torch.pi)
+                tpr[i][:, 2] = unwrapToPi(tpr[i][:, 2])
 
             xref0toNf.extend(tpr)
             uref0toNfminus1.extend([uref[i].reshape(Nf, -1) for i in idx])
@@ -194,10 +222,5 @@ def get_control_loaders(file_paths: list[str], batch_sizes=(0, 0)):
 
 
 if __name__ == "__main__":
-    dataset = SysidDataset(["bruh.csv"], Nf=2)
-    print(f"x0 shape: {dataset.x0.shape}")
-    print(f"u0toNf shape: {dataset.u0toNf.shape}")
-    print(f"x1toNf shape: {dataset.x1toNf.shape}")
-    print(f"x0: {dataset.x0}")
-    print(f"u0toNf: {dataset.u0toNf}")
-    print(f"x1toNf: {dataset.x1toNf}")
+    dataset = SysidDataset(["data_v1.1.0_sysid/train/po_dimanche_0.csv"], Nf=2)
+    dataset = ControlDataset(["data_v1.1.0/train/fsds_competition_1_0.csv"])

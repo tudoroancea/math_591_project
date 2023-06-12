@@ -332,11 +332,16 @@ def main():
         ),
         Nf=Nf,
     )
-    system_model.model.model.ode.load_state_dict(
-        torch.load(f"checkpoints/{system_model_name}_best.ckpt")["system_model"]
-    )
-    # for p in system_model.parameters():
-    #     p.requires_grad = False
+    try:
+        system_model.model.model.ode.load_state_dict(
+            torch.load(config["system_model"]["checkpoint_path"])["system_model"]
+        )
+        print("Successfully loaded system model parameters from checkpoint")
+    except FileNotFoundError:
+        print("No checkpoint found for system model, using random initialization")
+    except RuntimeError:
+        print("Checkpoint found for system model, but not compatible with current model")
+
     system_model.requires_grad_(False)
     system_model.eval()
     control_mlp = MLP(
@@ -350,8 +355,14 @@ def main():
             path = args.control_ckpt
         else:
             path = control_model_best_path
-        if os.path.exists(path):
+        try:
             control_mlp.load_state_dict(torch.load(path)["control_model"])
+            print("Successfully loaded control model parameters from checkpoint")
+        except FileNotFoundError:
+            print("No checkpoint found for control model, using random initialization")
+        except RuntimeError:
+            print("Checkpoint found for control model, but not compatible with current model")
+
     control_model = MLPControlPolicy(nx=nx, nu=nu, Nf=Nf, mlp=control_mlp)
     if with_wandb:
         wandb.watch(control_model, log_freq=1)

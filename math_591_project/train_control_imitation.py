@@ -36,7 +36,7 @@ def train(
     val_dataloader: torch.utils.data.DataLoader,
     scheduler: torch.optim.lr_scheduler.LRScheduler = None,
     num_epochs=10,
-    loss_weights=(1.0, 1.0),
+    loss_weights={"T": 1.0, "ddelta": 1.0},
     with_wandb=False,
 ):
     best_val_loss = float("inf")
@@ -48,7 +48,7 @@ def train(
         for batch in train_dataloader:
             optimizer.zero_grad()
             T_loss, ddelta_loss = run_model(control_model, batch)
-            loss = loss_weights[0] * T_loss + loss_weights[1] * ddelta_loss
+            loss = loss_weights["T"] * T_loss + loss_weights["ddelta"] * ddelta_loss
             fabric.backward(loss)
             optimizer.step()
             train_loss += loss.item()
@@ -77,7 +77,7 @@ def train(
             val_ddelta_loss += velocity_loss.item()
         val_T_loss /= len(val_dataloader)
         val_ddelta_loss /= len(val_dataloader)
-        val_loss = loss_weights[0] * val_T_loss + loss_weights[1] * val_ddelta_loss
+        val_loss = loss_weights["T"] * val_T_loss + loss_weights["ddelta"] * val_ddelta_loss
 
         to_log = {
             "train_loss": train_loss,
@@ -137,9 +137,10 @@ def main():
     optimizer = optimizer_params.pop("name")
     scheduler_params = config["training"]["scheduler"]
     scheduler = scheduler_params.pop("name")
+    data_dir = config["data"]["dir"]
     train_dataset_path = config["data"]["train"]
     test_dataset_path = config["data"]["test"]
-    train_val_batch_size = config["data"]["batch_size"]
+    train_val_batch_size = config["training"]["batch_size"]
 
     # initialize wandb ==========================================
     if with_wandb:
@@ -185,10 +186,19 @@ def main():
         nhidden=nhidden,
         nonlinearity=nonlinearity,
     )
-    if from_checkpoint and os.path.exists(control_model_best_path):
-        control_mlp.load_state_dict(
-            torch.load(control_model_best_path)["control_model"]
-        )
+    if config["control_model"]["from_checkpoint"]:
+        if args.control_ckpt != "":
+            path = args.control_ckpt
+        else:
+            path = control_model_best_path
+        try:
+            control_mlp.load_state_dict(torch.load(path)["control_model"])
+            print("Successfully loaded control model parameters from checkpoint")
+        except FileNotFoundError:
+            print("No checkpoint found for control model, using random initialization")
+        except RuntimeError:
+            print("Checkpoint found for control model, but not compatible with current model")
+
     control_model = MLPControlPolicy(nx=nx, nu=nu, Nf=Nf, mlp=control_mlp)
     if with_wandb:
         wandb.watch(control_model, log_freq=1)
@@ -220,10 +230,10 @@ def main():
 
     # load data ================================================================
     # load all CSV files in data/sysid
-    data_dir = "data/" + train_dataset_path
+    train_data_dir = os.path.join(data_dir, train_dataset_path)
     file_paths = [
-        os.path.abspath(os.path.join(data_dir, file_path))
-        for file_path in os.listdir(data_dir)
+        os.path.abspath(os.path.join(train_data_dir, file_path))
+        for file_path in os.listdir(train_data_dir)
         if file_path.endswith(".csv")
     ]
     assert all([os.path.exists(path) for path in file_paths])
@@ -301,10 +311,10 @@ def main():
     system_model = fabric.setup(system_model)
 
     # load test train_dataset
-    data_dir = "data/" + test_dataset_path
+    test_data_dir = os.path.join(data_dir, test_dataset_path)
     file_paths = [
-        os.path.abspath(os.path.join(data_dir, file_path))
-        for file_path in os.listdir(data_dir)
+        os.path.abspath(os.path.join(test_data_dir, file_path))
+        for file_path in os.listdir(test_data_dir)
         if file_path.endswith(".csv")
     ]
     test_dataset = ControlDataset(file_paths)
