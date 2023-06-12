@@ -3,13 +3,17 @@ import argparse
 import json
 import os
 
+import lightning as L
 import torch
+import torch.nn.functional as F
 from lightning import Fabric
 from matplotlib import pyplot as plt
 
 from math_591_project.data_utils import *
 from math_591_project.models import *
 from math_591_project.plot_utils import *
+
+L.seed_everything(127)
 
 
 def main():
@@ -28,6 +32,7 @@ def main():
     if model_name.startswith("blackbox"):
         n_hidden = config["model"]["n_hidden"]
         nonlinearity = config["model"]["nonlinearity"]
+    checkpoint_path = config["model"]["checkpoint_path"]
 
     data_dir = os.path.join(config["data"]["dir"], config["data"]["test"])
     testing_params = config["testing"]
@@ -57,11 +62,16 @@ def main():
         ),
         Nf=test_Nf,
     )
-    system_model.model.ode.load_state_dict(
-        torch.load(f"checkpoints/{model_name}_best.ckpt", map_location="cpu")[
-            "system_model"
-        ]
-    )
+    try:
+        system_model.model.ode.load_state_dict(
+            torch.load(checkpoint_path, map_location="cpu")["system_model"]
+        )
+        print("Successfully loaded model parameters from checkpoint")
+    except FileNotFoundError:
+        print("No checkpoint found, using random initialization")
+    except RuntimeError:
+        print("Checkpoint found, but not compatible with current model")
+
     system_model = fabric.setup(system_model)
 
     # create test dataloader
@@ -76,17 +86,36 @@ def main():
     )
     test_dataloader = fabric.setup_dataloaders(test_dataloader)
 
-    # evaluate model on test set
+    # run model on a batch of the test set
     system_model.eval()
     xtilde0, utilde0toNfminus1, xtilde1toNf = next(iter(test_dataloader))
     xtilde1toNf_p = system_model(xtilde0, utilde0toNfminus1)
+
+    # compute the test loss
+    XY_loss = F.mse_loss(xtilde1toNf_p[..., :2], xtilde1toNf[..., :2])
+    phi_loss = F.mse_loss(xtilde1toNf_p[..., 2], xtilde1toNf[..., 2])
+    v_x_loss = F.mse_loss(xtilde1toNf_p[..., 3], xtilde1toNf[..., 3])
+    if xtilde1toNf_p.shape[-1] > 4:
+        v_y_loss = F.mse_loss(xtilde1toNf_p[..., 4], xtilde1toNf[..., 4])
+        r_loss = F.mse_loss(xtilde1toNf_p[..., 5], xtilde1toNf[..., 5])
+    else:
+        v_y_loss = torch.tensor(0.0)
+        r_loss = torch.tensor(0.0)
+    print(
+        f"test losses:\n\tXY: {XY_loss:.4f}\n\tphi: {phi_loss:.4f}\n\tv_x: {v_x_loss:.4f}\n\tv_y: {v_y_loss:.4f}\n\tr: {r_loss:.4f}"
+    )
+
+    # move all tensors to the cpu and plot them
     xtilde0 = xtilde0.detach().cpu().numpy()
     utilde0toNfminus1 = utilde0toNfminus1.detach().cpu().numpy()
     xtilde1toNf = xtilde1toNf.detach().cpu().numpy()
     xtilde1toNf_p = xtilde1toNf_p.detach().cpu().numpy()
     if not os.path.exists("test_plots"):
         os.mkdir("test_plots")
-    plot_names = [f"test_plots/{model_name}_{i}.png" for i in range(num_samples)]
+    plot_names = [
+        f"test_plots/{model_name}_{checkpoint_path.split('/')[-1].split('.')[0]}_{i}.png"
+        for i in range(num_samples)
+    ]
     for i in range(num_samples):
         (plot_kin4 if model_name.endswith("kin4") else plot_dyn6)(
             xtilde0=xtilde0[i],

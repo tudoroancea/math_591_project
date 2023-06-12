@@ -8,7 +8,7 @@
         ],
         "nonlinearity": "leaky_relu",
         "from_checkpoint": false,
-        "checkpoint_path": "checkpoints/blackbox_dyn6/nf20.ckpt"
+        "checkpoint_path": "checkpoints/blackbox_dyn6/nf5.ckpt"
     },
     "training": {
         "num_epochs": 500,

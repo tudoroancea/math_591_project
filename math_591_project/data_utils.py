@@ -62,7 +62,7 @@ def load_data(file_path: str, format="numpy") -> torch.Tensor:
         u_ref = torch.from_numpy(u_ref).to(dtype=torch.float32)
 
     # find first index where v_x > 0.5 and only keep data after that
-    idx = np.where(x[:, 3] > 0.5)[0][0]
+    idx = np.where(x[:, 3] > 0.01)[0][0]
     timestamps = timestamps[idx:]
     x = x[idx:]
     x_ref = x_ref[idx:]

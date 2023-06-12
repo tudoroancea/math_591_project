@@ -166,7 +166,8 @@ def main():
     if model_name.startswith("blackbox"):
         nhidden = config["model"]["n_hidden"]
         nonlinearity = config["model"]["nonlinearity"]
-        from_checkpoint = config["model"]["from_checkpoint"]
+    from_checkpoint = config["model"]["from_checkpoint"]
+    checkpoint_path = config["model"]["checkpoint_path"]
 
     num_epochs = config["training"]["num_epochs"]
     loss_weights = config["training"]["loss_weights"]
@@ -217,10 +218,10 @@ def main():
     if with_wandb:
         wandb.watch(system_model, log_freq=1)
 
-    if model_name.startswith("blackbox") and from_checkpoint:
+    if from_checkpoint:
         try:
             system_model.model.ode.load_state_dict(
-                torch.load(f"checkpoints/{model_name}_best.ckpt")["system_model"]
+                torch.load(checkpoint_path, map_location="cpu")["system_model"]
             )
             print("Successfully loaded model parameters from checkpoint")
         except FileNotFoundError:
