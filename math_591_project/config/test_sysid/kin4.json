@@ -1,14 +1,8 @@
 {
     "model": {
-        "name": "blackbox_dyn6",
-        "n_hidden": [
-            128,
-            128,
-            128
-        ],
-        "nonlinearity": "leaky_relu",
+        "name": "kin4",
         "from_checkpoint": false,
-        "checkpoint_path": "checkpoints/blackbox_dyn6/nf5.ckpt"
+        "checkpoint_path": "checkpoints/kin4.ckpt"
     },
     "training": {
         "num_epochs": 500,

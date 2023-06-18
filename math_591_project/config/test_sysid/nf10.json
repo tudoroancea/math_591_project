@@ -31,7 +31,7 @@
         }
     },
     "testing": {
-        "num_samples": 10,
+        "num_samples": 0,
         "Nf": 40
     },
     "data": {
