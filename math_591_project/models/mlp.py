@@ -1,7 +1,7 @@
+from typing import OrderedDict
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import OrderedDict
 
 __all__ = ["MLP"]
 

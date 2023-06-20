@@ -1,79 +1,60 @@
 # Copyright (c) 2023 Tudor Oancea
-from abc import ABC, abstractmethod
-from typing import Union
-
 import torch
 import torch.nn as nn
 from icecream import ic
 
 __all__ = [
-    "KIN4_NXTILDE",
-    "KIN4_NUTILDE",
-    "DYN6_NXTILDE",
-    "DYN6_NUTILDE",
-    "ODE",
-    "Kin4ODE",
-    "Dyn6ODE",
-    "GrayboxKin4ODE",
-    "GrayboxDyn6ODE",
+    "Model",
+    "ContinuousModel",
+    "DiscreteModel",
+    "Kin4",
+    "Dyn6",
+    "NeuralDyn6",
     "RK4",
-    "ControlDiscreteModel",
-    "MLPControlPolicy",
     "OpenLoop",
-    "ClosedLoop",
+    "ode_from_string",
 ]
 
 
-KIN4_NXTILDE = 4
-KIN4_NUTILDE = 2
-DYN6_NXTILDE = 6
-DYN6_NUTILDE = 2
-
 class Model(nn.Module):
-    state_dim:int
-    control_dim:int
-    def __init__(self, state_dim:int, control_dim:int):
+    state_dim: int
+    control_dim: int
+
+    def __init__(self, state_dim: int, control_dim: int):
         super().__init__()
         self.state_dim = state_dim
         self.control_dim = control_dim
 
+    def forward(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        """
+        :param x: shape (batch_size, state_dim)
+        :param u: shape (batch_size, control_dim)
+        :return xnext or xdot: shape (batch_size, state_dim)
+        """
+        assert len(x.shape) == 2
+        assert len(u.shape) == 2
+        assert x.shape[0] == u.shape[0]
+        assert x.shape[1] == self.state_dim
+        assert u.shape[1] == self.control_dim
+
+
 class ContinuousModel(Model):
-    def __init__(self, state_dim:int, control_dim:int):
+    def __init__(self, state_dim: int, control_dim: int):
         super().__init__(state_dim, control_dim)
+
 
 class DiscreteModel(Model):
     dt: float
-    def __init__(self, state_dim:int, control_dim:int, dt:float):
+
+    def __init__(self, state_dim: int, control_dim: int, dt: float):
         super().__init__(state_dim, control_dim)
         self.dt = dt
 
-class ODE(nn.Module):
-    nxtilde: int
-    nutilde: int
 
-    def __init__(self, nxtilde: int, nutilde: int):
-        super().__init__()
-        self.nxtilde = nxtilde
-        self.nutilde = nutilde
+class Kin4(ContinuousModel):
+    NXTILDE = 4
+    NUTILDE = 2
 
-    def forward(self, xtilde: torch.Tensor, utilde: torch.Tensor):
-        """
-        :param xtilde: shape (batch_size, nxtilde)
-        :param utilde: shape (batch_size, nutilde)
-        :return xtildedot: shape (batch_size, nxtilde)
-        """
-        assert (
-            xtilde.shape[0] == utilde.shape[0]
-        ), f"Batch size of x and u must match but are {xtilde.shape[0]} and {utilde.shape[0]}"
-        assert (
-            len(xtilde.shape) == 2 and xtilde.shape[1] == self.nxtilde
-        ), f"x must have shape (batch_size, {self.nxtilde}) but has shape {xtilde.shape}"
-        assert (
-            len(utilde.shape) == 2 and utilde.shape[1] == self.nutilde
-        ), f"u must have shape (batch_size, {self.nutilde}) but has shape {utilde.shape}"
-
-
-class Kin4ODE(ODE):
     def __init__(
         self,
         m=223.0,
@@ -85,7 +66,7 @@ class Kin4ODE(ODE):
         C_r1=0.0,
         C_r2=3.5,
     ):
-        super().__init__(nxtilde=KIN4_NXTILDE, nutilde=KIN4_NUTILDE)
+        super().__init__(NXTILDE, NUTILDE)
         self.m = m
         self.l_R = l_R
         self.l_F = l_F
@@ -101,7 +82,6 @@ class Kin4ODE(ODE):
         :param utilde: shape (batch_size, nutilde) = (batch_size, 2)
         :return xtildedot: shape (batch_size, nxtilde) = (batch_size, 4)
         """
-
         super().forward(xtilde, utilde)
         beta = torch.arctan(torch.tan(utilde[:, 1]) * self.l_R / (self.l_R + self.l_F))
         F_x = (
@@ -120,7 +100,7 @@ class Kin4ODE(ODE):
         )
 
 
-class Dyn6ODE(ODE):
+class Dyn6(ContinuousModel):
     def __init__(
         self,
         m=223.0,
@@ -139,7 +119,7 @@ class Dyn6ODE(ODE):
         C_F=1.98,
         D_F=1.67,
     ):
-        super().__init__(nxtilde=DYN6_NXTILDE, nutilde=DYN6_NUTILDE)
+        super().__init__(DYN6_NXTILDE, DYN6_NUTILDE)
         self.m = m
         self.l_R = l_R
         self.l_F = l_F
@@ -208,37 +188,12 @@ class Dyn6ODE(ODE):
         )
 
 
-class GrayboxKin4ODE(ODE):
+class NeuralDyn6(ContinuousModel):
+    nin = DYN6_NXTILDE + DYN6_NUTILDE - 3
+    nout = DYN6_NXTILDE - 3
+
     def __init__(self, net: nn.Module):
-        super().__init__(nxtilde=KIN4_NXTILDE, nutilde=KIN4_NUTILDE)
-        # check that net is compatible with the input size
-        with torch.no_grad():
-            try:
-                output = net(torch.ones(2, self.nxtilde + self.nutilde))
-            except:
-                raise ValueError(
-                    "net must take as input a tensor of shape (batch, nxtilde+nutilde)=(batch, 6)"
-                )
-            assert output.shape == (
-                2,
-                self.nxtilde,
-            ), "net must output a tensor of shape (batch, nxtilde)=(batch, 4)"
-
-        self.net = net
-
-    def forward(self, xtilde: torch.Tensor, utilde: torch.Tensor) -> torch.Tensor:
-        """
-        :param xtilde: shape (batch_size, nxtilde) = (batch_size, 4)
-        :param utilde: shape (batch_size, nutilde) = (batch_size, 2)
-        :return xtildedot: shape (batch_size, nxtilde) = (batch_size, 4)
-        """
-        super().forward(xtilde, utilde)
-        return self.net(torch.cat([xtilde, utilde], dim=1))
-
-
-class GrayboxDyn6ODE(ODE):
-    def __init__(self, net: nn.Module):
-        super().__init__(nxtilde=DYN6_NXTILDE, nutilde=DYN6_NUTILDE)
+        super().__init__(DYN6_NXTILDE, DYN6_NUTILDE)
         # check that net is compatible with the input size
         with torch.no_grad():
             batch_size = 2
@@ -276,40 +231,10 @@ class GrayboxDyn6ODE(ODE):
         )
 
 
-class DiscreteModel(ABC, nn.Module())
-class BaseDiscretization(ABC, nn.Module):
-    nxtilde: int
-    nutilde: int
-    dt: float
-
-    def __init__(self, nxtilde: int, nutilde: int, dt: float) -> None:
-        super().__init__()
-        self.nxtilde = nxtilde
-        self.nutilde = nutilde
-        self.dt = dt
-
-    @abstractmethod
-    def forward(self, xtilde: torch.Tensor, utilde: torch.Tensor):
-        """
-        :param xtilde: shape (batch_size, nxtilde)
-        :param utilde: shape (batch_size, nutilde)
-        :return xtildenext: shape (batch_size, nxtilde)
-        """
-        assert (
-            xtilde.shape[0] == utilde.shape[0]
-        ), f"batch_size of x and u must be equal but are respectively {xtilde.shape[0]} and {utilde.shape[0]}"
-        assert len(xtilde.shape) == 2 and xtilde.shape[1:] == (
-            self.nxtilde,
-        ), f"x.shape must be (batch_size, {self.nxtilde}) but is {xtilde.shape}"
-        assert len(utilde.shape) == 2 and utilde.shape[1:] == (
-            self.nutilde,
-        ), f"u.shape must be (batch_size, {self.nutilde}) but is {utilde.shape}"
-
-
-class RK4(BaseDiscretization):
-    def __init__(self, nxtilde: int, nutilde: int, ode: nn.Module, dt: float):
+class RK4(DiscreteModel):
+    def __init__(self, ode: ContinuousModel, nxtilde: int, nutilde: int, dt: float):
         super().__init__(nxtilde, nutilde, dt)
-        self.ode
+        self.ode = ode
 
     def forward(self, xtilde: torch.Tensor, utilde: torch.Tensor) -> torch.Tensor:
         """
@@ -327,12 +252,10 @@ class RK4(BaseDiscretization):
 
 
 class OpenLoop(nn.Module):
-    model: Union[BaseDiscretization, ControlDiscreteModel]
+    model: Model
     Nf: int
 
-    def __init__(
-        self, model: Union[BaseDiscretization, ControlDiscreteModel], Nf: int
-    ) -> None:
+    def __init__(self, model: Model, Nf: int) -> None:
         super().__init__()
         self.model = model
         self.Nf = Nf
@@ -343,10 +266,17 @@ class OpenLoop(nn.Module):
         :param u0toNfminus1: (batch_size, Nf, nu)
         :return x1toNf: (batch_size, Nf, nx)
         """
-        assert u0toNfminus1.shape[1] == self.Nf
         assert x0.shape[0] == u0toNfminus1.shape[0]
+        assert u0toNfminus1.shape[1] == self.Nf
         x1toNf = [self.model(x0[:, 0, :], u0toNfminus1[:, 0, :])]
         for i in range(1, self.Nf):
             x1toNf.append(self.model(x1toNf[-1], u0toNfminus1[:, i, :]))
 
         return torch.stack(x1toNf, dim=1)
+
+
+ode_from_string = {
+    "Kin4": Kin4,
+    "Dyn6": Dyn6,
+    "NeuralDyn6": NeuralDyn6,
+}

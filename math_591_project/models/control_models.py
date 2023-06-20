@@ -1,13 +1,12 @@
 # Copyright (c) 2023 Tudor Oancea
-from abc import ABC, abstractmethod
-from typing import Union
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from icecream import ic
-from .system_models 
+
+from .system_models import *
+
 __all__ = [
     "KIN4_NX",
     "DYN6_NX",
@@ -21,9 +20,9 @@ KIN4_NX = 5
 DYN6_NX = 7
 
 
-class LiftedDiscreteModel(nn.Module):
-    def __init__(self, model: BaseDiscretization, nx: int, nu: int):
-        super().__init__()
+class LiftedDiscreteModel(DiscreteModel):
+    def __init__(self, model: DiscreteModel, nx: int, nu: int):
+        super().__init__(nx, nu)
         self.model = model
         self.nx = nx
         self.nu = nu
@@ -35,8 +34,6 @@ class LiftedDiscreteModel(nn.Module):
         :param u: shape (batch_size, nu)
         :return xnext: shape (batch_size, nx)
         """
-        assert x.shape[1] == self.nx
-        assert u.shape[1] == self.nu
         delta = x[:, -1:] + u[:, 1:2]
         return torch.cat(
             (
@@ -47,7 +44,7 @@ class LiftedDiscreteModel(nn.Module):
         )
 
 
-class ControlPolicy(ABC, nn.Module):
+class ControlPolicy(nn.Module):
     nx: int
     nu: int
     Nf: int
@@ -58,7 +55,6 @@ class ControlPolicy(ABC, nn.Module):
         self.nu = nu
         self.Nf = Nf
 
-    @abstractmethod
     def forward(self, x0: torch.Tensor, xref0toNf: torch.Tensor) -> torch.Tensor:
         """
         :param x0: shape (batch_size, nx)
@@ -140,21 +136,3 @@ class MLPControlPolicy(ControlPolicy):
             F.tanh(self.mlp(input)).view(batch_size, self.Nf, self.nu)
             * self.output_scaling
         )
-
-
-class ClosedLoop(nn.Module):
-    system_model: LiftedDiscreteModel
-    control_model: ControlPolicy
-
-    def __init__(
-        self, system_model: LiftedDiscreteModel, control_model: ControlPolicy
-    ) -> None:
-        super().__init__()
-        self.system_model = system_model
-        self.control_model = control_model
-
-    def forward(self, x0: torch.Tensor, xref0toNf: torch.Tensor):
-        Nf = xref0toNf.shape[1] - 1
-
-        x = [x0.squeeze()]
-        u = []

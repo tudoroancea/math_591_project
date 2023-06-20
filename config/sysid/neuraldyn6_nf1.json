@@ -1,0 +1,43 @@
+{
+    "model": {
+        "name": "blackbox_dyn6",
+        "n_hidden": [
+            128,
+            128,
+            128
+        ],
+        "nonlinearity": "leaky_relu",
+        "from_checkpoint": false,
+        "checkpoint_path": "checkpoints/blackbox_dyn6/nf1.ckpt"
+    },
+    "training": {
+        "num_epochs": 500,
+        "Nf": 1,
+        "batch_size": 100000,
+        "loss_weights": {
+            "XY": 1.0,
+            "phi": 10.0,
+            "v_x": 1.0,
+            "v_y": 1.0,
+            "r": 1.0
+        },
+        "optimizer": {
+            "name": "adamw",
+            "lr": 0.0005,
+            "weight_decay": 0.05
+        },
+        "scheduler": {
+            "name": "none"
+        }
+    },
+    "testing": {
+        "num_samples": 0,
+        "Nf": 40
+    },
+    "data": {
+        "dir": "data_v1.1.0_sysid",
+        "train": "train",
+        "test": "test"
+    },
+    "with_wandb": true
+}

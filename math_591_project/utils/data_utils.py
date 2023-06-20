@@ -1,9 +1,10 @@
 from typing import Union
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader, random_split
 from icecream import ic
+from torch.utils.data import DataLoader, Dataset, random_split
 
 
 def teds_projection(x: Union[np.ndarray, torch.Tensor], a):
@@ -219,8 +220,3 @@ def get_control_loaders(file_paths: list[str], batch_sizes=(0, 0)):
         shuffle=True,
     )
     return train_loader, val_loader
-
-
-if __name__ == "__main__":
-    dataset = SysidDataset(["data_v1.1.0_sysid/train/po_dimanche_0.csv"], Nf=2)
-    dataset = ControlDataset(["data_v1.1.0/train/fsds_competition_1_0.csv"])

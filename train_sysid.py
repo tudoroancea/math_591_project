@@ -13,9 +13,8 @@ from lightning import Fabric
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from math_591_project.utils.data_utils import *
+from math_591_project.utils import *
 from math_591_project.models import *
-from math_591_project.utils.plot_utils import *
 
 L.seed_everything(127)
 
@@ -153,64 +152,67 @@ def main():
     parser.add_argument(
         "--cfg_file",
         type=str,
-        default="config/blackbox_dyn6_sysid.json",
+        default="config/sysid/neuraldyn6_nf10.json",
         help="specify the config file used for training",
     )
     args = parser.parse_args()
 
-    # set up parameters =========================================================
+    # extract config =================================================================
     config = json.load(open(args.cfg_file, "r"))
     with_wandb = config.pop("with_wandb")
     print(f"Training " + ("with" if with_wandb else "without") + " wandb")
+
+    # model config
+    model_config = config["model"]
     model_name: str = config["model"]["name"]
-    if model_name.startswith("blackbox"):
+    model_is_neural = model_name.startswith("neural")
+    if model_is_neural:
         nhidden = config["model"]["n_hidden"]
         nonlinearity = config["model"]["nonlinearity"]
     from_checkpoint = config["model"]["from_checkpoint"]
-    checkpoint_path = config["model"]["checkpoint_path"]
+    input_checkpoint = config["model"]["input_checkpoint"]
+    output_checkpoint = config["model"]["output_checkpoint"]
 
+    # training config
+    training_config = config["training"]
+    train_Nf = config["training"]["Nf"]
     num_epochs = config["training"]["num_epochs"]
     loss_weights = config["training"]["loss_weights"]
-    optimizer_params = config["training"]["optimizer"]
-    optimizer = optimizer_params.pop("name")
-    scheduler_params = config["training"]["scheduler"]
-    scheduler = scheduler_params.pop("name")
+
+    optimizer_config = config["training"]["optimizer"]
+    optimizer = optimizer_config.pop("name")
+
+    scheduler_config = config["training"]["scheduler"]
+    scheduler = scheduler_config.pop("name")
+
     data_dir = config["data"]["dir"]
     train_dataset_path = config["data"]["train"]
     test_dataset_path = config["data"]["test"]
-    dt = 1 / 20
     train_Nf = config["training"]["Nf"]
     test_Nf = config["testing"]["Nf"]
     train_val_batch_size = config["training"]["batch_size"]
-
-    # initialize wandb ==========================================
-    if with_wandb:
-        wandb.init(
-            project="brains_neural_control",
-            name=f"sysid|{model_name}",
-            config=config,
-        )
 
     # intialize lightning fabric ===============================================
     fabric = Fabric()
     print("Using device: ", fabric.device)
 
     # initialize model and optimizer =========================================================
-    dims = ode_dims[model_name]
-    if model_name.startswith("blackbox"):
-        ode_t, nxtilde, nutilde, nin, nout = dims
-    else:
-        ode_t, nxtilde, nutilde = dims
+    ode_t = ode_from_string[model_name]
 
     system_model = OpenLoop(
         model=RK4(
+            ode=ode_t(
+                net=MLP(
+                    nin=ode_t.nin,
+                    nout=ode_t.nout,
+                    nhidden=nhidden,
+                    nonlinearity=nonlinearity,
+                )
+            )
+            if model_is_neural
+            else ode_t(),
             nxtilde=nxtilde,
             nutilde=nutilde,
-            ode=ode_t(
-                net=MLP(nin=nin, nout=nout, nhidden=nhidden, nonlinearity=nonlinearity)
-            )
-            if model_name.startswith("blackbox")
-            else ode_t(),
             dt=dt,
         ),
         Nf=train_Nf,
@@ -221,7 +223,7 @@ def main():
     if from_checkpoint:
         try:
             system_model.model.ode.load_state_dict(
-                torch.load(checkpoint_path, map_location="cpu")["system_model"]
+                torch.load(input_checkpoint, map_location="cpu")
             )
             print("Successfully loaded model parameters from checkpoint")
         except FileNotFoundError:
@@ -239,7 +241,7 @@ def main():
         case _:
             raise NotImplementedError(f"Optimizer {optimizer} not implemented")
 
-    optimizer = optimizer_t(system_model.parameters(), **optimizer_params)
+    optimizer = optimizer_t(system_model.parameters(), **optimizer_config)
 
     match scheduler:
         case "steplr":
@@ -249,7 +251,7 @@ def main():
         case _:
             scheduler_t = None
 
-    scheduler = scheduler_t(optimizer, **scheduler_params) if scheduler_t else None
+    scheduler = scheduler_t(optimizer, **scheduler_config) if scheduler_t else None
 
     system_model, optimizer = fabric.setup(system_model, optimizer)
 
@@ -270,6 +272,14 @@ def main():
     train_dataloader, val_dataloader = fabric.setup_dataloaders(
         train_dataloader, val_dataloader
     )
+
+    # initialize wandb ==========================================
+    if with_wandb:
+        wandb.init(
+            project="brains_neural_control",
+            name=f"sysid|{model_name}",
+            config=config,
+        )
 
     # Run training loop with validation =========================================
     try:
