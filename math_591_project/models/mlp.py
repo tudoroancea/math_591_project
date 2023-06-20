@@ -22,6 +22,8 @@ class MLP(nn.Module):
             self.nonlinearity = nn.LeakyReLU()
         elif nonlinearity == "tanh":
             self.nonlinearity = nn.Tanh()
+        elif nonlinearity == "sigmoid":
+            self.nonlinearity = nn.Sigmoid()
         else:
             raise ValueError(f"nonlinearity {nonlinearity} not supported")
 

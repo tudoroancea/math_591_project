@@ -13,9 +13,9 @@ from lightning import Fabric
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from math_591_project.data_utils import *
+from math_591_project.utils.data_utils import *
 from math_591_project.models import *
-from math_591_project.plot_utils import *
+from math_591_project.utils.plot_utils import *
 
 L.seed_everything(127)
 

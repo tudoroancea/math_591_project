@@ -10,10 +10,10 @@ import torch.nn.functional as F
 from lightning import Fabric
 from matplotlib import pyplot as plt
 
-from math_591_project.data_utils import *
+from math_591_project.utils.data_utils import *
 from math_591_project.models import *
-from math_591_project.plot_utils import *
-from math_591_project.plot_utils import plot_sysid_trajs
+from math_591_project.utils.plot_utils import *
+from math_591_project.utils.plot_utils import plot_open_loop_predictions
 
 L.seed_everything(127)
 plt.style.use(["science"])
@@ -24,7 +24,7 @@ def load_config(config_path):
     return json.load(open(config_path, "r"))
 
 
-def load_test_data(fabric: Fabric, config: dict):
+def load_sysid_test_data(fabric: Fabric, config: dict):
     data_dir = os.path.join(config["data"]["dir"], config["data"]["test"])
     num_samples = config["testing"]["num_samples"]
     file_paths = [
@@ -44,7 +44,7 @@ def load_test_data(fabric: Fabric, config: dict):
     return test_dataset, test_dataloader
 
 
-def create_test_model(fabric: Fabric, config: dict):
+def create_sysid_test_model(fabric: Fabric, config: dict):
     model_name = config["model"]["name"]
     is_blackbox = model_name.startswith("blackbox")
     dims = ode_dims[model_name]
@@ -88,7 +88,7 @@ def create_test_model(fabric: Fabric, config: dict):
     return system_model
 
 
-def compute_errors(xtilde1toNf_p, xtilde1toNf, config):
+def compute_sysid_errors(xtilde1toNf_p, xtilde1toNf, config):
     errors = torch.zeros((xtilde1toNf.shape[0], config["testing"]["Nf"], 5))
     errors[..., 0] = (
         F.mse_loss(xtilde1toNf_p[..., :2], xtilde1toNf[..., :2], reduction="none")
@@ -128,10 +128,10 @@ def old_main():
 
     fabric = Fabric()
     print(f"Using {fabric.device} device")
-    system_model = create_test_model(fabric, config)
+    system_model = create_sysid_test_model(fabric, config)
 
     # load test data ==================================================================
-    test_dataset, test_dataloader = load_test_data(fabric, config)
+    test_dataset, test_dataloader = load_sysid_test_data(fabric, config)
 
     # run model on test set ===========================================================
     system_model.eval()
@@ -140,7 +140,7 @@ def old_main():
 
     # compute the test losses (XY, phi, v_x, v_y, r) for each stage (1 to Nf) and for each sample
     # => losses has shape (dataset size, Nf, 5)
-    errors = compute_errors(xtilde1toNf_p, xtilde1toNf, config)
+    errors = compute_sysid_errors(xtilde1toNf_p, xtilde1toNf, config)
 
     # compute means by variable
     # => means has shape (5,)
@@ -231,13 +231,13 @@ def plot_errors():
     config_paths = [f"config/test_sysid/nf{i}.json" for i in Nfs] + [
         "config/test_sysid/kin4.json"
     ]
-    _, test_dataloader = load_test_data(fabric, config)
+    _, test_dataloader = load_sysid_test_data(fabric, config)
     fabric = Fabric()
     errors = []
     for i, config_path in enumerate(config_paths):
         print("Computing errors for", f"Nf={Nfs[i]}" if i < len(Nfs) else "kin4")
         config = load_config(config_path)
-        system_model = create_test_model(fabric, config)
+        system_model = create_sysid_test_model(fabric, config)
         system_model.eval()
         xtilde0, utilde0toNfminus1, xtilde1toNf = next(iter(test_dataloader))
         xtilde1toNf_p = system_model(
@@ -246,7 +246,7 @@ def plot_errors():
 
         # compute the test errors (XY, phi, v_x, v_y, r) for each stage (1 to Nf) and for each sample
         # => errors has shape (dataset size, Nf, 5)
-        errors.append(compute_errors(xtilde1toNf_p, xtilde1toNf, config))
+        errors.append(compute_sysid_errors(xtilde1toNf_p, xtilde1toNf, config))
 
     # compute means by stage and by variable => list of arrays of shape (Nf, 5)
     means = [error.mean(axis=0) for error in errors]
@@ -429,7 +429,9 @@ def plot_trajs():
         "config/test_sysid/kin4.json"
     ]
     fabric = Fabric()
-    test_dataset, test_dataloader = load_test_data(fabric, load_config(config_paths[0]))
+    test_dataset, test_dataloader = load_sysid_test_data(
+        fabric, load_config(config_paths[0])
+    )
     # id = torch.randint(0, len(test_dataset), (1,)).item()
     id = 7800
     print("using id:", id)
@@ -443,7 +445,7 @@ def plot_trajs():
 
     for i, config_path in enumerate(config_paths):
         config = load_config(config_path)
-        system_model = create_test_model(fabric, config)
+        system_model = create_sysid_test_model(fabric, config)
         system_model.eval()
         xtilde1toNf_p = system_model(
             xtilde0 if i < len(Nfs) else xtilde0[..., :4], utilde0toNfminus1
@@ -464,7 +466,7 @@ def plot_trajs():
 
     xtilde1toNf_ps = torch.cat(xtilde1toNf_ps, dim=0)  # shape (len(Nfs), Nf, 6)
 
-    plot_sysid_trajs(
+    plot_open_loop_predictions(
         xtilde0=xtilde0.squeeze(0).cpu().numpy(),
         utilde0toNfminus1=utilde0toNfminus1.squeeze(0).cpu().numpy(),
         xtilde1toNf=xtilde1toNf.squeeze(0).cpu().numpy(),
@@ -473,6 +475,7 @@ def plot_trajs():
         dt=1 / 20,
     )
     plt.savefig(f"sysid_trajs.png", dpi=300)
+
 
 if __name__ == "__main__":
     # main()

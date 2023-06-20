@@ -13,9 +13,8 @@ from lightning import Fabric
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from math_591_project.data_utils import *
 from math_591_project.models import *
-from math_591_project.plot_utils import *
+from math_591_project.utils import *
 
 L.seed_everything(127)
 
@@ -37,8 +36,6 @@ def run_model(system_model, control_model, batch, delta_max, ddelta_max):
     v_x_lb_loss = torch.mean(F.relu(-x1toNf[:, :, 3]) ** 2)
     delta_ub_loss = torch.mean(F.relu(x1toNf[:, :, -1] - delta_max) ** 2)
     delta_lb_loss = torch.mean(F.relu(-x1toNf[:, :, -1] - delta_max) ** 2)
-    ddelta_ub_loss = torch.mean(F.relu(u0toNfminus1[:, :, 1] - ddelta_max) ** 2)
-    ddelta_lb_loss = torch.mean(F.relu(-u0toNfminus1[:, :, 1] - ddelta_max) ** 2)
 
     return (
         XY_loss,
@@ -51,8 +48,6 @@ def run_model(system_model, control_model, batch, delta_max, ddelta_max):
         v_x_lb_loss,
         delta_ub_loss,
         delta_lb_loss,
-        ddelta_ub_loss,
-        ddelta_lb_loss,
     )
 
 
@@ -100,8 +95,6 @@ def train(
             "v_x_lb": 0.0,
             "delta_ub": 0.0,
             "delta_lb": 0.0,
-            "ddelta_ub": 0.0,
-            "ddelta_lb": 0.0,
             "total": 0.0,
         }
         val_losses = copy(train_losses)
@@ -118,8 +111,6 @@ def train(
                 v_x_lb_loss,
                 delta_ub_loss,
                 delta_lb_loss,
-                ddelta_ub_loss,
-                ddelta_lb_loss,
             ) = run_model(system_model, control_model, batch, delta_max, ddelta_max)
 
             loss = (
@@ -130,14 +121,7 @@ def train(
                 + loss_weights["q_T"] * T_loss
                 + loss_weights["q_ddelta"] * ddelta_loss
                 + loss_weights["q_s"]
-                * (
-                    v_x_lb_loss
-                    + v_x_ub_loss
-                    + delta_lb_loss
-                    + delta_ub_loss
-                    + ddelta_lb_loss
-                    + ddelta_ub_loss
-                )
+                * (v_x_lb_loss + v_x_ub_loss + delta_lb_loss + delta_ub_loss)
             )
             fabric.backward(loss)
             optimizer.step()
@@ -151,8 +135,6 @@ def train(
             train_losses["v_x_lb"] += v_x_lb_loss.item()
             train_losses["delta_ub"] += delta_ub_loss.item()
             train_losses["delta_lb"] += delta_lb_loss.item()
-            train_losses["ddelta_ub"] += ddelta_ub_loss.item()
-            train_losses["ddelta_lb"] += ddelta_lb_loss.item()
             train_losses["total"] += loss.item()
 
         for k in train_losses.keys():
@@ -180,8 +162,6 @@ def train(
                     v_x_lb_loss,
                     delta_ub_loss,
                     delta_lb_loss,
-                    ddelta_ub_loss,
-                    ddelta_lb_loss,
                 ) = run_model(system_model, control_model, batch, delta_max, ddelta_max)
             val_losses["XY"] += XY_loss.item()
             val_losses["phi"] += phi_loss.item()
@@ -193,8 +173,6 @@ def train(
             val_losses["v_x_lb"] += v_x_lb_loss.item()
             val_losses["delta_ub"] += delta_ub_loss.item()
             val_losses["delta_lb"] += delta_lb_loss.item()
-            val_losses["ddelta_ub"] += ddelta_ub_loss.item()
-            val_losses["ddelta_lb"] += ddelta_lb_loss.item()
             val_losses["total"] += (
                 loss_weights["q_XY"] * XY_loss
                 + loss_weights["q_phi"] * phi_loss
@@ -311,7 +289,7 @@ def main():
     nu = nutilde
 
     system_model = OpenLoop(
-        model=ControlDiscreteModel(
+        model=LiftedDiscreteModel(
             nx=nx,
             nu=nu,
             model=RK4(
@@ -340,7 +318,9 @@ def main():
     except FileNotFoundError:
         print("No checkpoint found for system model, using random initialization")
     except RuntimeError:
-        print("Checkpoint found for system model, but not compatible with current model")
+        print(
+            "Checkpoint found for system model, but not compatible with current model"
+        )
 
     system_model.requires_grad_(False)
     system_model.eval()
@@ -361,7 +341,9 @@ def main():
         except FileNotFoundError:
             print("No checkpoint found for control model, using random initialization")
         except RuntimeError:
-            print("Checkpoint found for control model, but not compatible with current model")
+            print(
+                "Checkpoint found for control model, but not compatible with current model"
+            )
 
     control_model = MLPControlPolicy(nx=nx, nu=nu, Nf=Nf, mlp=control_mlp)
     if with_wandb:
