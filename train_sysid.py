@@ -230,9 +230,11 @@ def main():
 
     if from_checkpoint:
         try:
-            system_model.model.ode.load_state_dict(
-                torch.load(input_checkpoint, map_location="cpu")
-            )
+            (
+                system_model.model.ode.net
+                if model_is_neural
+                else system_model.model.ode
+            ).load_state_dict(torch.load(input_checkpoint, map_location="cpu"))
             print("Successfully loaded model parameters from checkpoint")
         except FileNotFoundError:
             print("No checkpoint found, using random initialization")

@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 from copy import copy
+from pyexpat import model
 
 import lightning as L
 import torch
@@ -19,7 +20,7 @@ from math_591_project.utils import *
 L.seed_everything(127)
 
 
-def run_model(system_model, control_model, batch, delta_max, ddelta_max):
+def run_model(system_model, control_model, batch, delta_max):
     x0, xref0toNf, _ = batch
     u0toNfminus1 = control_model(x0, xref0toNf)
     x1toNf = system_model(x0, u0toNfminus1)
@@ -53,13 +54,13 @@ def run_model(system_model, control_model, batch, delta_max, ddelta_max):
 
 def train(
     fabric: Fabric,
-    system_model_name: str,
     system_model: torch.nn.Module,
     control_model: MLPControlPolicy,
     optimizer: torch.optim.Optimizer,
     train_dataloader: torch.utils.data.DataLoader,
     val_dataloader: torch.utils.data.DataLoader,
     loss_weights: dict,
+    control_output_ckpt: str,
     scheduler: torch.optim.lr_scheduler.LRScheduler = None,
     num_epochs: int = 10,
     with_wandb: bool = False,
@@ -206,12 +207,8 @@ def train(
         if val_losses["total"] < best_val_loss:
             best_val_loss = val_losses["total"]
             fabric.save(
-                f"checkpoints/{system_model_name}_control_best.ckpt",
-                {
-                    "control_model": control_model.mlp,
-                    "optimizer": optimizer,
-                    "scheduler": scheduler,
-                },
+                control_output_ckpt,
+                control_model.mlp.state_dict(),
             )
 
 
@@ -220,7 +217,7 @@ def main():
     parser.add_argument(
         "--cfg_file",
         type=str,
-        default="config/blackbox_dyn6_control_dpc.json",
+        default="config/control/neural_dyn6.json",
         help="specify the config for training",
     )
     parser.add_argument(
@@ -233,74 +230,49 @@ def main():
     # set up config =========================================================
     config = json.load(open(args.cfg_file, "r"))
     with_wandb = config.pop("with_wandb")
-    dt = 1 / 20
+    print("Training " + ("with" if with_wandb else "without") + " wandb")
     Nf = 40
-    system_model_name = config["system_model"]["name"]
-    control_model_best_path = f"checkpoints/{system_model_name}_control_best.ckpt"
-    control_model_final_path = f"checkpoints/{system_model_name}_control_final.ckpt"
-    num_epochs = config["training"]["num_epochs"]
-    optimizer_params = config["training"]["optimizer"]
-    optimizer = optimizer_params.pop("name")
-    scheduler_params = config["training"]["scheduler"]
-    scheduler = scheduler_params.pop("name")
-    data_dir = config["data"]["dir"]
-    train_dataset_path = config["data"]["train"]
-    test_dataset_path = config["data"]["test"]
-    loss_weights = config["training"]["loss_weights"]
-    train_val_batch_size = config["training"]["batch_size"]
 
-    # initialize wandb ==========================================
-    if with_wandb:
-        wandb.init(
-            project="brains_neural_control",
-            name=f"control|dpc",
-            config=config,
-        )
+    # system model config
+    system_model_config = config["system_model"]
+    system_model_name = system_model_config["name"]
+    ode_t = ode_from_string(system_model_name)
+    assert issubclass(ode_t, NeuralMixin), "system model must be a neural model"
+    system_input_checkpoint = system_model_config["checkpoint"]
+
+    # control model config
+    control_model_config = config["control_model"]
+    control_input_ckpt = control_model_config["input_checkpoint"]
+    control_output_ckpt = control_model_config["output_checkpoint"]
+
+    # training config
+    train_config = config["train"]
+    num_epochs = train_config["num_epochs"]
+    loss_weights = train_config["loss_weights"]
+    train_val_batch_size = train_config["batch_size"]
+    train_data_dir = train_config["data_dir"]
+
+    optimizer_params = train_config["optimizer"]
+    optimizer = optimizer_params.pop("name")
+
+    scheduler_params = train_config["scheduler"]
+    scheduler = scheduler_params.pop("name")
+
+    # testing config
+    test_data_dir = config["test"]["data_dir"]
 
     # intialize lightning fabric ===============================================
     fabric = Fabric()
     print("Fabric initialized with devices:", fabric.device)
 
     # initialize model and optimizer =========================================================
-    match system_model_name:
-        case "kin4":
-            nxtilde = KIN4_NXTILDE
-            nutilde = KIN4_NUTILDE
-            ode_t = Kin4ODE
-        case "dyn6":
-            nxtilde = DYN6_NXTILDE
-            nutilde = DYN6_NUTILDE
-            ode_t = Dyn6ODE
-        case "blackbox_kin4":
-            nxtilde = KIN4_NXTILDE
-            nutilde = KIN4_NUTILDE
-            nin = nxtilde + nutilde
-            nout = nxtilde
-            ode_t = BlackboxKin4ODE
-        case "blackbox_dyn6":
-            nxtilde = DYN6_NXTILDE
-            nutilde = DYN6_NUTILDE
-            nin = nxtilde + nutilde - 3
-            nout = nxtilde - 3
-            ode_t = BlackboxDyn6ODE
-        case _:
-            raise ValueError(f"Unknown model name: {system_model_name}")
-    nx = nxtilde + 1
-    nu = nutilde
-
     system_model = OpenLoop(
         model=LiftedDiscreteModel(
-            nx=nx,
-            nu=nu,
             model=RK4(
-                nxtilde=nxtilde,
-                nutilde=nutilde,
                 ode=ode_t(
                     net=MLP(
-                        nin=nin,
-                        nout=nout,
-                        nhidden=config["system_model"]["nhidden"],
-                        nonlinearity=config["system_model"]["nonlinearity"],
+                        nhidden=system_model_config["nhidden"],
+                        nonlinearity=system_model_config["nonlinearity"],
                     ),
                 )
                 if system_model_name.startswith("blackbox")
@@ -311,8 +283,8 @@ def main():
         Nf=Nf,
     )
     try:
-        system_model.model.model.ode.load_state_dict(
-            torch.load(config["system_model"]["checkpoint_path"])["system_model"]
+        system_model.model.model.ode.net.load_state_dict(
+            torch.load(system_input_checkpoint, map_location="cpu")
         )
         print("Successfully loaded system model parameters from checkpoint")
     except FileNotFoundError:
@@ -324,19 +296,25 @@ def main():
 
     system_model.requires_grad_(False)
     system_model.eval()
-    control_mlp = MLP(
-        nin=nx - 3 + (Nf + 1) * 4,
-        nout=nu * Nf,
-        nhidden=config["control_model"]["nhidden"],
-        nonlinearity=config["control_model"]["nonlinearity"],
+
+    control_model = MLPControlPolicy(
+        mlp=MLP(
+            nin=MLPControlPolicy.nin,
+            nout=MLPControlPolicy.nout,
+            nhidden=control_model_config["nhidden"],
+            nonlinearity=control_model_config["nonlinearity"],
+        ),
     )
-    if config["control_model"]["from_checkpoint"]:
-        if args.control_ckpt != "":
-            path = args.control_ckpt
-        else:
-            path = control_model_best_path
+    if control_model_config["from_checkpoint"]:
         try:
-            control_mlp.load_state_dict(torch.load(path)["control_model"])
+            control_model.mlp.load_state_dict(
+                torch.load(
+                    args.control_ckpt
+                    if args.control_ckpt != ""
+                    else control_input_ckpt,
+                    map_location="cpu",
+                )
+            )
             print("Successfully loaded control model parameters from checkpoint")
         except FileNotFoundError:
             print("No checkpoint found for control model, using random initialization")
@@ -345,7 +323,6 @@ def main():
                 "Checkpoint found for control model, but not compatible with current model"
             )
 
-    control_model = MLPControlPolicy(nx=nx, nu=nu, Nf=Nf, mlp=control_mlp)
     if with_wandb:
         wandb.watch(control_model, log_freq=1)
 
@@ -377,7 +354,6 @@ def main():
 
     # load data ================================================================
     # load all CSV files in data/sysid
-    train_data_dir = os.path.join(data_dir, train_dataset_path)
     file_paths = [
         os.path.abspath(os.path.join(train_data_dir, file_path))
         for file_path in os.listdir(train_data_dir)
@@ -391,50 +367,41 @@ def main():
         train_dataloader, val_dataloader
     )
 
+    # initialize wandb ==========================================
+    if with_wandb:
+        wandb.init(
+            project="brains_neural_control",
+            name=f"control|dpc",
+            config=config,
+        )
+
     # Run training loop with validation =========================================
     train(
         fabric,
-        system_model_name,
         system_model,
         control_model,
         optimizer,
         train_dataloader,
         val_dataloader,
+        control_output_ckpt=control_output_ckpt,
         scheduler=scheduler,
         num_epochs=num_epochs,
         loss_weights=loss_weights,
         with_wandb=with_wandb,
     )
-    # compare one weight in system model's state dict before and after training
-    # to make sure it's not changing
-    wbefore = torch.load(f"checkpoints/{system_model_name}_best.ckpt")["system_model"][
-        "net.net.output_layer.weight"
-    ]
-    wafter = system_model.model.model.ode.net.net[-1].weight
-    print(
-        f"sytem model output layer weight is the same: {torch.allclose(wbefore, wafter)}"
-    )
-    print(f"grad is None: {wafter.grad is None}")
-
     # save model ================================================================
-    fabric.save(
-        control_model_final_path,
-        {"control_model": control_model.mlp},
-    )
-
+    # fabric.save(control_output_ckpt, control_model.mlp.state_dict())
+    # log the model to wandb
     if with_wandb:
-        # log the model to wandb
-        wandb.save(control_model_best_path)
-        wandb.save(control_model_final_path)
+        wandb.save(control_output_ckpt)
 
     # evaluate model on test set ================================================
     # load best model
     control_model.mlp.load_state_dict(
-        torch.load(control_model_best_path)["control_model"]
+        torch.load(control_output_ckpt, map_location="cpu")
     )
     control_model.eval()
     # load test train_dataset
-    test_data_dir = os.path.join(data_dir, test_dataset_path)
     file_paths = [
         os.path.abspath(os.path.join(test_data_dir, file_path))
         for file_path in os.listdir(test_data_dir)
@@ -454,17 +421,18 @@ def main():
 
     x0 = x0.detach().cpu().numpy()
     xref0toNf = xref0toNf.detach().cpu().numpy()
-    u0toNfminus1 = u0toNfminus1.detach().cpu().numpy()
-    x1toNf = x1toNf.detach().cpu().numpy()
+    u0toNfminus1 = u0toNfminus1.unsqueeze(1).detach().cpu().numpy()
+    x1toNf = x1toNf.unsqueeze(1).detach().cpu().numpy()
     if not os.path.exists("plots"):
         os.mkdir("plots")
     plot_names = [f"{system_model_name}_control_{i}.png" for i in range(5)]
     for i in range(5):
-        (plot_kin4_control if system_model_name == "kin4" else plot_dyn6_control)(
+        plot_stuff(
             x0=x0[i],
             xref0toNf=xref0toNf[i],
             u0toNfminus1=u0toNfminus1[i],
             x1toNf=x1toNf[i],
+            model_labels=[system_model_name + "_control"],
             dt=dt,
         )
         plt.savefig("plots/" + plot_names[i], dpi=300)

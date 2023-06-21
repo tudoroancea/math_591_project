@@ -1,0 +1,49 @@
+{
+    "with_wandb": false,
+    "system_model": {
+        "name": "neural_dyn6",
+        "nhidden": [
+            128,
+            128,
+            128
+        ],
+        "nonlinearity": "leaky_relu",
+        "input_checkpoint": "checkpoints/sysid/neural_dyn6_nf=10.ckpt"
+    },
+    "control_model": {
+        "nhidden": [
+            128,
+            128,
+            128
+        ],
+        "nonlinearity": "leaky_relu",
+        "from_checkpoint": true,
+        "input_checkpoint": "checkpoints/control/neural_dyn6.ckpt",
+        "output_checkpoint": "checkpoints/control/neural_dyn6.ckpt"
+    },
+    "training": {
+        "num_epochs": 500,
+        "batch_size": 10000,
+        "loss_weights": {
+            "q_XY": 100.0,
+            "q_phi": 200.0,
+            "q_v_x": 10.0,
+            "q_T": 100.0,
+            "q_delta": 200.0,
+            "q_ddelta": 100.0,
+            "q_s": 100.0
+        },
+        "data_dir": "dataset_v2.0.0/train_control",
+        "optimizer": {
+            "name": "adam",
+            "lr": 5e-4,
+            "weight_decay": 1e-2
+        },
+        "scheduler": {
+            "name": "none"
+        }
+    },
+    "testing": {
+        "data_dir": "dataset_v2.0.0/test_control"
+    }
+}

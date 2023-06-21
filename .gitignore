@@ -6,13 +6,5 @@ __pycache__
 *.egg-info
 .vscode
 .idea
-*.ckpt
-*.pth
-*.pkl
-*.pt
-*.png
-*.jpg
-*.jpeg
-*.npy
 
 dataset*

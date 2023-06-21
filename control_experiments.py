@@ -1,5 +1,4 @@
 # Copyright (c) 2023 Tudor Oancea
-import argparse
 import json
 import os
 
@@ -24,7 +23,7 @@ def load_config(config_path):
     return json.load(open(config_path, "r"))
 
 
-def load_control_test_data(fabric: Fabric, config: dict):
+def load_control_test_data(config: dict):
     data_dir = os.path.join(config["data"]["dir"], config["data"]["test"])
     file_paths = [
         os.path.abspath(os.path.join(data_dir, file_path))
@@ -33,283 +32,233 @@ def load_control_test_data(fabric: Fabric, config: dict):
     ]
     test_dataset = ControlDataset(file_paths)
     return test_dataset
-    # test_dataloader = DataLoader(
-    #     test_dataset, batch_size=1, shuffle=True, num_workers=1
-    # )
-    # test_dataloader = fabric.setup_dataloaders(test_dataloader)
-
-    # return test_dataset, test_dataloader
 
 
-def create_control_test_model(fabric: Fabric, config: dict):
-    model_name = config["model"]["name"]
-    is_blackbox = model_name.startswith("blackbox")
-    dims = ode_dims[model_name]
-    if is_blackbox:
-        ode_t, nxtilde, nutilde, nin, nout = dims
-    else:
-        ode_t, nxtilde, nutilde = dims
+# def plot_stuff(
+#     x0: np.ndarray,
+#     xref0toNf: np.ndarray,
+#     u0toNfminus1: np.ndarray,
+#     x1toNf: np.ndarray,
+#     model_labels: list[str],
+#     dt=1 / 20,
+# ):
+#     """
+#     Plot the trajectories of the system identification for a bunch of models (Nmodels).
+#     If one of the models is kin4 or blackbox_kin4, it just has to use nans for the last
+#     two states (v_y and r).
 
-    system_model = OpenLoop(
-        model=RK4(
-            nxtilde=nxtilde,
-            nutilde=nutilde,
-            ode=ode_t(
-                net=MLP(
-                    nin=nin,
-                    nout=nout,
-                    nhidden=config["model"]["n_hidden"],
-                    nonlinearity=config["model"]["nonlinearity"],
-                )
-            )
-            if is_blackbox
-            else ode_t(),
-            dt=1 / 20,
-        ),
-        Nf=config["testing"]["Nf"],
-    )
-    try:
-        system_model.model.ode.load_state_dict(
-            torch.load(config["model"]["checkpoint_path"], map_location="cpu")[
-                "system_model"
-            ]
-        )
-        # print("Successfully loaded model parameters from checkpoint")
-    except FileNotFoundError:
-        print("No checkpoint found, using random initialization")
-    except RuntimeError:
-        print("Checkpoint found, but not compatible with current model")
+#     :param x0: initial state, shape (1, 6)
+#     :param xref0toNf: reference trajectory, shape (Nf, 6)
+#     :param u0toNfminus1: computed controls, shape (M, Nf, 2)
+#     :param x1toNf: open loop state prediction, shape (M, Nf, 6)
+#     """
+#     assert len(u0toNfminus1.shape) == 3
+#     M = u0toNfminus1.shape[0]
+#     assert len(model_labels) == M == x1toNf.shape[0]
+#     # x0toNf = np.concatenate((np.tile(x0.reshape(1, -1), (M, 1, 1)), x1toNf), axis=1)
+#     x0 = x0.ravel()
+#     X = np.concatenate((np.full((M, 1), x0[0]), x1toNf[..., 0]), axis=1)
+#     Y = np.concatenate((np.full((M, 1), x0[1]), x1toNf[..., 1]), axis=1)
+#     phi = np.concatenate((np.full((M, 1), x0[2]), x1toNf[..., 2]), axis=1)
+#     v_x = np.concatenate((np.full((M, 1), x0[3]), x1toNf[..., 3]), axis=1)
+#     v_y = np.concatenate((np.full((M, 1), x0[4]), x1toNf[..., 4]), axis=1)
+#     r = np.concatenate((np.full((M, 1), x0[5]), x1toNf[..., 5]), axis=1)
+#     T = np.concatenate((u0toNfminus1[..., 0], np.full((M, 1), np.nan)), axis=1)
+#     delta = np.concatenate((x1toNf[:, :, 6], np.full((M, 1), np.nan)), axis=1)
+#     ddelta = np.concatenate((u0toNfminus1[..., 1], np.full((M, 1), np.nan)), axis=1)
 
-    system_model = fabric.setup(system_model)
-
-    return system_model
-
-
-def plot_stuff(
-    x0: np.ndarray,
-    xref0toNf: np.ndarray,
-    u0toNfminus1: np.ndarray,
-    x1toNf: np.ndarray,
-    model_labels: list[str],
-    dt=1 / 20,
-):
-    """
-    Plot the trajectories of the system identification for a bunch of models (Nmodels).
-    If one of the models is kin4 or blackbox_kin4, it just has to use nans for the last
-    two states (v_y and r).
-
-    :param x0: initial state, shape (1, 6)
-    :param xref0toNf: reference trajectory, shape (Nf, 6)
-    :param u0toNfminus1: computed controls, shape (M, Nf, 2)
-    :param x1toNf: open loop state prediction, shape (M, Nf, 6)
-    """
-    assert len(u0toNfminus1.shape) == 3
-    M = u0toNfminus1.shape[0]
-    assert len(model_labels) == M == x1toNf.shape[0]
-    # x0toNf = np.concatenate((np.tile(x0.reshape(1, -1), (M, 1, 1)), x1toNf), axis=1)
-    x0 = x0.ravel()
-    X = np.concatenate((np.full((M, 1), x0[0]), x1toNf[..., 0]), axis=1)
-    Y = np.concatenate((np.full((M, 1), x0[1]), x1toNf[..., 1]), axis=1)
-    phi = np.concatenate((np.full((M, 1), x0[2]), x1toNf[..., 2]), axis=1)
-    v_x = np.concatenate((np.full((M, 1), x0[3]), x1toNf[..., 3]), axis=1)
-    v_y = np.concatenate((np.full((M, 1), x0[4]), x1toNf[..., 4]), axis=1)
-    r = np.concatenate((np.full((M, 1), x0[5]), x1toNf[..., 5]), axis=1)
-    T = np.concatenate((u0toNfminus1[..., 0], np.full((M, 1), np.nan)), axis=1)
-    delta = np.concatenate((x1toNf[:, :, 6], np.full((M, 1), np.nan)), axis=1)
-    ddelta = np.concatenate((u0toNfminus1[..., 1], np.full((M, 1), np.nan)), axis=1)
-
-    # ref_options = {"color": "blue", "linewidth": 2}
-    # pred_options = {"color": "red", "linewidth": 2}
-    colors = ["blue", "orange", "green", "red", "purple", "brown"]
-    linewidth = 1.5
-    simulation_plot = Plot(
-        row_nbr=4,
-        col_nbr=3,
-        mode=PlotMode.STATIC,
-        sampling_time=dt,
-        interval=1,
-        figsize=(15, 8),
-    )
-    simulation_plot.add_subplot(
-        row_idx=range(4),
-        col_idx=0,
-        subplot_name=r"$XY$",
-        subplot_type=SubplotType.SPATIAL,
-        unit="m",
-        show_unit=True,
-        curves={
-            "reference trajectory": {
-                "data": xref0toNf[:, :2],
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "black", "linewidth": linewidth},
-            }
-        }
-        | {
-            model_labels[i]: {
-                "data": np.array([X[i], Y[i]]).T,
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": colors[i], "linewidth": linewidth},
-            }
-            for i in range(M)
-        },
-    )
-    simulation_plot.add_subplot(
-        row_idx=0,
-        col_idx=1,
-        subplot_name=r"$\varphi$",
-        subplot_type=SubplotType.TEMPORAL,
-        unit="°",
-        show_unit=True,
-        curves={
-            r"reference $\phi$": {
-                "data": np.rad2deg(xref0toNf[:, 2]),
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "black", "linewidth": linewidth},
-            }
-        }
-        | {
-            model_labels[i]: {
-                "data": np.rad2deg(phi[i]),
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": colors[i], "linewidth": linewidth},
-            }
-            for i in range(M)
-        },
-    )
-    simulation_plot.add_subplot(
-        row_idx=1,
-        col_idx=1,
-        subplot_name=r"$v_x$",
-        subplot_type=SubplotType.TEMPORAL,
-        unit="m/s",
-        show_unit=True,
-        curves={
-            r"reference $v_x$": {
-                "data": xref0toNf[:, 3],
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": "black", "linewidth": linewidth},
-            },
-        }
-        | {
-            model_labels[i]: {
-                "data": v_x[i],
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {"color": colors[i], "linewidth": linewidth},
-            }
-            for i in range(M)
-        },
-    )
-    simulation_plot.add_subplot(
-        row_idx=2,
-        col_idx=1,
-        subplot_name=r"$T$",
-        subplot_type=SubplotType.TEMPORAL,
-        unit="1",
-        show_unit=True,
-        curves={
-            model_labels[i]: {
-                "data": T[i],
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.STEP,
-                "mpl_options": {
-                    "color": colors[i],
-                    "linewidth": linewidth,
-                    "where": "post",
-                },
-            }
-            for i in range(M)
-        },
-    )
-    simulation_plot.add_subplot(
-        row_idx=2,
-        col_idx=2,
-        subplot_name=r"$\delta$",
-        subplot_type=SubplotType.TEMPORAL,
-        unit="°",
-        show_unit=True,
-        curves={
-            model_labels[i]: {
-                "data": np.rad2deg(delta[i]),
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.STEP,
-                "mpl_options": {
-                    "color": colors[i],
-                    "linewidth": linewidth,
-                    "where": "post",
-                },
-            }
-            for i in range(M)
-        },
-    )
-    simulation_plot.add_subplot(
-        row_idx=0,
-        col_idx=2,
-        subplot_name=r"$r$",
-        subplot_type=SubplotType.TEMPORAL,
-        unit="°/s",
-        show_unit=True,
-        curves={
-            model_labels[i]: {
-                "data": np.rad2deg(r[i]),
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {
-                    "color": colors[i],
-                    "linewidth": linewidth,
-                },
-            }
-            for i in range(M)
-        },
-    )
-    simulation_plot.add_subplot(
-        row_idx=1,
-        col_idx=2,
-        subplot_name=r"$v_y$",
-        subplot_type=SubplotType.TEMPORAL,
-        unit="m/s",
-        show_unit=True,
-        curves={
-            model_labels[i]: {
-                "data": v_y[i],
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.PLOT,
-                "mpl_options": {
-                    "color": colors[i],
-                    "linewidth": linewidth,
-                },
-            }
-            for i in range(M)
-        },
-    )
-    simulation_plot.add_subplot(
-        row_idx=3,
-        col_idx=2,
-        subplot_name=r"$d\delta$",
-        subplot_type=SubplotType.TEMPORAL,
-        unit="°/s",
-        show_unit=True,
-        curves={
-            model_labels[i]: {
-                "data": np.rad2deg(ddelta[i]),
-                "curve_type": CurveType.REGULAR,
-                "curve_style": CurvePlotStyle.STEP,
-                "mpl_options": {
-                    "color": colors[i],
-                    "linewidth": linewidth,
-                    "where": "post",
-                },
-            }
-            for i in range(M)
-        },
-    )
-    simulation_plot.plot(show=False)
-    simulation_plot._content[r"$XY$"]["ax"].legend(["reference"] + model_labels, loc=2)
+#     # ref_options = {"color": "blue", "linewidth": 2}
+#     # pred_options = {"color": "red", "linewidth": 2}
+#     colors = ["blue", "orange", "green", "red", "purple", "brown"]
+#     linewidth = 1.5
+#     simulation_plot = Plot(
+#         row_nbr=4,
+#         col_nbr=3,
+#         mode=PlotMode.STATIC,
+#         sampling_time=dt,
+#         interval=1,
+#         figsize=(15, 8),
+#     )
+#     simulation_plot.add_subplot(
+#         row_idx=range(4),
+#         col_idx=0,
+#         subplot_name=r"$XY$",
+#         subplot_type=SubplotType.SPATIAL,
+#         unit="m",
+#         show_unit=True,
+#         curves={
+#             "reference trajectory": {
+#                 "data": xref0toNf[:, :2],
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.PLOT,
+#                 "mpl_options": {"color": "black", "linewidth": linewidth},
+#             }
+#         }
+#         | {
+#             model_labels[i]: {
+#                 "data": np.array([X[i], Y[i]]).T,
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.PLOT,
+#                 "mpl_options": {"color": colors[i], "linewidth": linewidth},
+#             }
+#             for i in range(M)
+#         },
+#     )
+#     simulation_plot.add_subplot(
+#         row_idx=0,
+#         col_idx=1,
+#         subplot_name=r"$\varphi$",
+#         subplot_type=SubplotType.TEMPORAL,
+#         unit="°",
+#         show_unit=True,
+#         curves={
+#             r"reference $\phi$": {
+#                 "data": np.rad2deg(xref0toNf[:, 2]),
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.PLOT,
+#                 "mpl_options": {"color": "black", "linewidth": linewidth},
+#             }
+#         }
+#         | {
+#             model_labels[i]: {
+#                 "data": np.rad2deg(phi[i]),
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.PLOT,
+#                 "mpl_options": {"color": colors[i], "linewidth": linewidth},
+#             }
+#             for i in range(M)
+#         },
+#     )
+#     simulation_plot.add_subplot(
+#         row_idx=1,
+#         col_idx=1,
+#         subplot_name=r"$v_x$",
+#         subplot_type=SubplotType.TEMPORAL,
+#         unit="m/s",
+#         show_unit=True,
+#         curves={
+#             r"reference $v_x$": {
+#                 "data": xref0toNf[:, 3],
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.PLOT,
+#                 "mpl_options": {"color": "black", "linewidth": linewidth},
+#             },
+#         }
+#         | {
+#             model_labels[i]: {
+#                 "data": v_x[i],
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.PLOT,
+#                 "mpl_options": {"color": colors[i], "linewidth": linewidth},
+#             }
+#             for i in range(M)
+#         },
+#     )
+#     simulation_plot.add_subplot(
+#         row_idx=2,
+#         col_idx=1,
+#         subplot_name=r"$T$",
+#         subplot_type=SubplotType.TEMPORAL,
+#         unit="1",
+#         show_unit=True,
+#         curves={
+#             model_labels[i]: {
+#                 "data": T[i],
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.STEP,
+#                 "mpl_options": {
+#                     "color": colors[i],
+#                     "linewidth": linewidth,
+#                     "where": "post",
+#                 },
+#             }
+#             for i in range(M)
+#         },
+#     )
+#     simulation_plot.add_subplot(
+#         row_idx=2,
+#         col_idx=2,
+#         subplot_name=r"$\delta$",
+#         subplot_type=SubplotType.TEMPORAL,
+#         unit="°",
+#         show_unit=True,
+#         curves={
+#             model_labels[i]: {
+#                 "data": np.rad2deg(delta[i]),
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.STEP,
+#                 "mpl_options": {
+#                     "color": colors[i],
+#                     "linewidth": linewidth,
+#                     "where": "post",
+#                 },
+#             }
+#             for i in range(M)
+#         },
+#     )
+#     simulation_plot.add_subplot(
+#         row_idx=0,
+#         col_idx=2,
+#         subplot_name=r"$r$",
+#         subplot_type=SubplotType.TEMPORAL,
+#         unit="°/s",
+#         show_unit=True,
+#         curves={
+#             model_labels[i]: {
+#                 "data": np.rad2deg(r[i]),
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.PLOT,
+#                 "mpl_options": {
+#                     "color": colors[i],
+#                     "linewidth": linewidth,
+#                 },
+#             }
+#             for i in range(M)
+#         },
+#     )
+#     simulation_plot.add_subplot(
+#         row_idx=1,
+#         col_idx=2,
+#         subplot_name=r"$v_y$",
+#         subplot_type=SubplotType.TEMPORAL,
+#         unit="m/s",
+#         show_unit=True,
+#         curves={
+#             model_labels[i]: {
+#                 "data": v_y[i],
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.PLOT,
+#                 "mpl_options": {
+#                     "color": colors[i],
+#                     "linewidth": linewidth,
+#                 },
+#             }
+#             for i in range(M)
+#         },
+#     )
+#     simulation_plot.add_subplot(
+#         row_idx=3,
+#         col_idx=2,
+#         subplot_name=r"$d\delta$",
+#         subplot_type=SubplotType.TEMPORAL,
+#         unit="°/s",
+#         show_unit=True,
+#         curves={
+#             model_labels[i]: {
+#                 "data": np.rad2deg(ddelta[i]),
+#                 "curve_type": CurveType.REGULAR,
+#                 "curve_style": CurvePlotStyle.STEP,
+#                 "mpl_options": {
+#                     "color": colors[i],
+#                     "linewidth": linewidth,
+#                     "where": "post",
+#                 },
+#             }
+#             for i in range(M)
+#         },
+#     )
+#     simulation_plot.plot(show=False)
+#     simulation_plot._content[r"$XY$"]["ax"].legend(["reference"] + model_labels, loc=2)
 
 
 @torch.no_grad()
@@ -324,12 +273,8 @@ def control_exp1():
     Nf = 40
     kin4_model = OpenLoop(
         model=LiftedDiscreteModel(
-            nx=KIN4_NX,
-            nu=KIN4_NUTILDE,
             model=RK4(
-                nxtilde=KIN4_NXTILDE,
-                nutilde=KIN4_NUTILDE,
-                ode=Kin4ODE(),
+                ode=Kin4(),
                 dt=dt,
             ),
         ),
@@ -337,15 +282,11 @@ def control_exp1():
     )
     blackbox_dyn6_model = OpenLoop(
         model=LiftedDiscreteModel(
-            nx=DYN6_NX,
-            nu=DYN6_NUTILDE,
             model=RK4(
-                nxtilde=DYN6_NXTILDE,
-                nutilde=DYN6_NUTILDE,
-                ode=BlackboxDyn6ODE(
+                ode=NeuralDyn6(
                     net=MLP(
-                        nin=ode_dims["blackbox_dyn6"][3],
-                        nout=ode_dims["blackbox_dyn6"][4],
+                        nin=NeuralDyn6.nin,
+                        nout=NeuralDyn6.nout,
                         nhidden=config["system_model"]["nhidden"],
                         nonlinearity=config["system_model"]["nonlinearity"],
                     ),

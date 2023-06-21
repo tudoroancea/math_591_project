@@ -75,7 +75,7 @@ def dataset_velocity_distribution():
     # plt.title(r"Distribution of $v_x$")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("v_x_distribution.png", dpi=300, bbox_inches="tight")
+    plt.savefig("experiments/sysid/v_x_distribution.png", dpi=300, bbox_inches="tight")
 
     plt.figure(figsize=(20, 10))
     plt.hist(
@@ -99,7 +99,7 @@ def dataset_velocity_distribution():
     # plt.title(r"Distribution of $v_y$")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("v_y_distribution.png", dpi=300, bbox_inches="tight")
+    plt.savefig("experiments/sysid/v_y_distribution.png", dpi=300, bbox_inches="tight")
 
     plt.figure(figsize=(20, 10))
     plt.hist(
@@ -123,7 +123,7 @@ def dataset_velocity_distribution():
     # plt.title(r"Distribution of $r$")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("r_distribution.png", dpi=300, bbox_inches="tight")
+    plt.savefig("experiments/sysid/r_distribution.png", dpi=300, bbox_inches="tight")
 
 
 def load_config(config_path):
@@ -260,7 +260,11 @@ def sysid_errors():
         plt.legend()
         plt.ylabel("error")
         plt.tight_layout()
-        plt.savefig(f"sysid_errors_{plot_titles[i]}.png", dpi=300, bbox_inches="tight")
+        plt.savefig(
+            f"experiments/sysid/sysid_errors_{plot_titles[i]}.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
 
     # compute means by variable => list of arrays of shape (5,)
     means = [error.mean(axis=(0, 1)) for error in errors]
@@ -275,7 +279,9 @@ def sysid_errors():
 def sysid_losses():
     losses = {}
     for Nf in Nfs:
-        data = pd.read_csv(f"experiments_resources/losses/sysid/neural_dyn6_nf={Nf}.csv")
+        data = pd.read_csv(
+            f"experiments/sysid/neural_dyn6_nf={Nf}.csv"
+        )
         losses[Nf] = {
             "train": data["train_loss"].values[:300],
             "validation": data["val_loss"].values[:300],
@@ -300,7 +306,7 @@ def sysid_losses():
     plt.tight_layout()
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
-    plt.savefig("sysid_losses.png", dpi=300, bbox_inches="tight")
+    plt.savefig("experiments/sysid/sysid_losses.png", dpi=300, bbox_inches="tight")
 
 
 @torch.no_grad()
@@ -351,7 +357,7 @@ def sysid_trajs():
         model_labels=model_labels,
         dt=1 / 20,
     )
-    plt.savefig(f"sysid_trajs.png", dpi=300)
+    plt.savefig(f"experiments/sysid/sysid_trajs.png", dpi=300)
 
 
 if __name__ == "__main__":
