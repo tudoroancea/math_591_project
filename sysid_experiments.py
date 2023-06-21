@@ -18,7 +18,7 @@ plt.style.use(["science"])
 plt.rcParams.update({"font.size": 20})
 
 Nfs = [1, 5, 10, 20]
-config_paths = [f"config/sysid/neural_dyn6_nf{i}.json" for i in Nfs] + [
+config_paths = [f"config/sysid/neural_dyn6_nf={i}.json" for i in Nfs] + [
     "config/sysid/kin4.json"
 ]
 model_labels = [rf"NeuralDyn6 $N_f$={Nf}" for Nf in Nfs] + ["Kin4"]
@@ -280,9 +280,7 @@ def sysid_errors():
 def sysid_losses():
     losses = {}
     for Nf in Nfs:
-        data = pd.read_csv(
-            f"experiments/sysid/neural_dyn6_nf={Nf}.csv"
-        )
+        data = pd.read_csv(f"experiments/sysid/neural_dyn6_nf={Nf}.csv")
         losses[Nf] = {
             "train": data["train_loss"].values[:300],
             "validation": data["val_loss"].values[:300],

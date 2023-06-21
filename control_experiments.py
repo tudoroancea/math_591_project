@@ -27,7 +27,7 @@ def load_config(config_path):
 
 
 def load_control_test_data(config: dict):
-    data_dir = os.path.join(config["data"]["dir"], config["data"]["test"])
+    data_dir = config["testing"]["data_dir"]
     file_paths = [
         os.path.abspath(os.path.join(data_dir, file_path))
         for file_path in os.listdir(data_dir)
@@ -43,7 +43,7 @@ def control_open_loop():
     config = load_config(config_path)
     # load control dataset
     fabric = Fabric()
-    test_dataset = load_control_test_data(fabric, config)
+    test_dataset = load_control_test_data(config)
     # load system model
     dt = 1 / 20
     Nf = 40
@@ -81,17 +81,22 @@ def control_open_loop():
         ),
     )
     try:
-        blackbox_dyn6_model.model.model.ode.load_state_dict(
+        blackbox_dyn6_model.model.model.ode.net.load_state_dict(
             torch.load(config["system_model"]["input_checkpoint"], map_location="cpu")
         )
+    except FileNotFoundError:
+        print("No checkpoint found for system model, using random initialization")
+    except RuntimeError:
+        print("Checkpoint found for system model, but not compatible with current model")
+
+    try:
         control_model.mlp.load_state_dict(
             torch.load(config["control_model"]["input_checkpoint"], map_location="cpu")
         )
     except FileNotFoundError:
-        print("No checkpoint found, using random initialization")
+        print("No checkpoint found for control model, using random initialization")
     except RuntimeError:
-        print("Checkpoint found, but not compatible with current model")
-
+        print("Checkpoint found for control model, but not compatible with current model")
     kin4_model = fabric.setup(kin4_model)
     blackbox_dyn6_model = fabric.setup(blackbox_dyn6_model)
     blackbox_dyn6_model.eval()
