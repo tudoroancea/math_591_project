@@ -3,19 +3,22 @@ import json
 import os
 
 import lightning as L
+import scienceplots
 import torch
 import torch.nn.functional as F
+from data_visualization import *
 from lightning import Fabric
 from matplotlib import pyplot as plt
-
-from math_591_project.utils.data_utils import *
-from math_591_project.models import *
-from math_591_project.utils.plot_utils import *
-from data_visualization import *
 from track_database import *
 
+from math_591_project.models import *
+from math_591_project.utils import *
+
 L.seed_everything(127)
-plt.style.use(["science"])
+try:
+    plt.style.use(["science"])
+except OSError:
+    print("science style not found, using default style")
 plt.rcParams.update({"font.size": 20})
 
 
@@ -34,236 +37,9 @@ def load_control_test_data(config: dict):
     return test_dataset
 
 
-# def plot_stuff(
-#     x0: np.ndarray,
-#     xref0toNf: np.ndarray,
-#     u0toNfminus1: np.ndarray,
-#     x1toNf: np.ndarray,
-#     model_labels: list[str],
-#     dt=1 / 20,
-# ):
-#     """
-#     Plot the trajectories of the system identification for a bunch of models (Nmodels).
-#     If one of the models is kin4 or blackbox_kin4, it just has to use nans for the last
-#     two states (v_y and r).
-
-#     :param x0: initial state, shape (1, 6)
-#     :param xref0toNf: reference trajectory, shape (Nf, 6)
-#     :param u0toNfminus1: computed controls, shape (M, Nf, 2)
-#     :param x1toNf: open loop state prediction, shape (M, Nf, 6)
-#     """
-#     assert len(u0toNfminus1.shape) == 3
-#     M = u0toNfminus1.shape[0]
-#     assert len(model_labels) == M == x1toNf.shape[0]
-#     # x0toNf = np.concatenate((np.tile(x0.reshape(1, -1), (M, 1, 1)), x1toNf), axis=1)
-#     x0 = x0.ravel()
-#     X = np.concatenate((np.full((M, 1), x0[0]), x1toNf[..., 0]), axis=1)
-#     Y = np.concatenate((np.full((M, 1), x0[1]), x1toNf[..., 1]), axis=1)
-#     phi = np.concatenate((np.full((M, 1), x0[2]), x1toNf[..., 2]), axis=1)
-#     v_x = np.concatenate((np.full((M, 1), x0[3]), x1toNf[..., 3]), axis=1)
-#     v_y = np.concatenate((np.full((M, 1), x0[4]), x1toNf[..., 4]), axis=1)
-#     r = np.concatenate((np.full((M, 1), x0[5]), x1toNf[..., 5]), axis=1)
-#     T = np.concatenate((u0toNfminus1[..., 0], np.full((M, 1), np.nan)), axis=1)
-#     delta = np.concatenate((x1toNf[:, :, 6], np.full((M, 1), np.nan)), axis=1)
-#     ddelta = np.concatenate((u0toNfminus1[..., 1], np.full((M, 1), np.nan)), axis=1)
-
-#     # ref_options = {"color": "blue", "linewidth": 2}
-#     # pred_options = {"color": "red", "linewidth": 2}
-#     colors = ["blue", "orange", "green", "red", "purple", "brown"]
-#     linewidth = 1.5
-#     simulation_plot = Plot(
-#         row_nbr=4,
-#         col_nbr=3,
-#         mode=PlotMode.STATIC,
-#         sampling_time=dt,
-#         interval=1,
-#         figsize=(15, 8),
-#     )
-#     simulation_plot.add_subplot(
-#         row_idx=range(4),
-#         col_idx=0,
-#         subplot_name=r"$XY$",
-#         subplot_type=SubplotType.SPATIAL,
-#         unit="m",
-#         show_unit=True,
-#         curves={
-#             "reference trajectory": {
-#                 "data": xref0toNf[:, :2],
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.PLOT,
-#                 "mpl_options": {"color": "black", "linewidth": linewidth},
-#             }
-#         }
-#         | {
-#             model_labels[i]: {
-#                 "data": np.array([X[i], Y[i]]).T,
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.PLOT,
-#                 "mpl_options": {"color": colors[i], "linewidth": linewidth},
-#             }
-#             for i in range(M)
-#         },
-#     )
-#     simulation_plot.add_subplot(
-#         row_idx=0,
-#         col_idx=1,
-#         subplot_name=r"$\varphi$",
-#         subplot_type=SubplotType.TEMPORAL,
-#         unit="°",
-#         show_unit=True,
-#         curves={
-#             r"reference $\phi$": {
-#                 "data": np.rad2deg(xref0toNf[:, 2]),
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.PLOT,
-#                 "mpl_options": {"color": "black", "linewidth": linewidth},
-#             }
-#         }
-#         | {
-#             model_labels[i]: {
-#                 "data": np.rad2deg(phi[i]),
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.PLOT,
-#                 "mpl_options": {"color": colors[i], "linewidth": linewidth},
-#             }
-#             for i in range(M)
-#         },
-#     )
-#     simulation_plot.add_subplot(
-#         row_idx=1,
-#         col_idx=1,
-#         subplot_name=r"$v_x$",
-#         subplot_type=SubplotType.TEMPORAL,
-#         unit="m/s",
-#         show_unit=True,
-#         curves={
-#             r"reference $v_x$": {
-#                 "data": xref0toNf[:, 3],
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.PLOT,
-#                 "mpl_options": {"color": "black", "linewidth": linewidth},
-#             },
-#         }
-#         | {
-#             model_labels[i]: {
-#                 "data": v_x[i],
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.PLOT,
-#                 "mpl_options": {"color": colors[i], "linewidth": linewidth},
-#             }
-#             for i in range(M)
-#         },
-#     )
-#     simulation_plot.add_subplot(
-#         row_idx=2,
-#         col_idx=1,
-#         subplot_name=r"$T$",
-#         subplot_type=SubplotType.TEMPORAL,
-#         unit="1",
-#         show_unit=True,
-#         curves={
-#             model_labels[i]: {
-#                 "data": T[i],
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.STEP,
-#                 "mpl_options": {
-#                     "color": colors[i],
-#                     "linewidth": linewidth,
-#                     "where": "post",
-#                 },
-#             }
-#             for i in range(M)
-#         },
-#     )
-#     simulation_plot.add_subplot(
-#         row_idx=2,
-#         col_idx=2,
-#         subplot_name=r"$\delta$",
-#         subplot_type=SubplotType.TEMPORAL,
-#         unit="°",
-#         show_unit=True,
-#         curves={
-#             model_labels[i]: {
-#                 "data": np.rad2deg(delta[i]),
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.STEP,
-#                 "mpl_options": {
-#                     "color": colors[i],
-#                     "linewidth": linewidth,
-#                     "where": "post",
-#                 },
-#             }
-#             for i in range(M)
-#         },
-#     )
-#     simulation_plot.add_subplot(
-#         row_idx=0,
-#         col_idx=2,
-#         subplot_name=r"$r$",
-#         subplot_type=SubplotType.TEMPORAL,
-#         unit="°/s",
-#         show_unit=True,
-#         curves={
-#             model_labels[i]: {
-#                 "data": np.rad2deg(r[i]),
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.PLOT,
-#                 "mpl_options": {
-#                     "color": colors[i],
-#                     "linewidth": linewidth,
-#                 },
-#             }
-#             for i in range(M)
-#         },
-#     )
-#     simulation_plot.add_subplot(
-#         row_idx=1,
-#         col_idx=2,
-#         subplot_name=r"$v_y$",
-#         subplot_type=SubplotType.TEMPORAL,
-#         unit="m/s",
-#         show_unit=True,
-#         curves={
-#             model_labels[i]: {
-#                 "data": v_y[i],
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.PLOT,
-#                 "mpl_options": {
-#                     "color": colors[i],
-#                     "linewidth": linewidth,
-#                 },
-#             }
-#             for i in range(M)
-#         },
-#     )
-#     simulation_plot.add_subplot(
-#         row_idx=3,
-#         col_idx=2,
-#         subplot_name=r"$d\delta$",
-#         subplot_type=SubplotType.TEMPORAL,
-#         unit="°/s",
-#         show_unit=True,
-#         curves={
-#             model_labels[i]: {
-#                 "data": np.rad2deg(ddelta[i]),
-#                 "curve_type": CurveType.REGULAR,
-#                 "curve_style": CurvePlotStyle.STEP,
-#                 "mpl_options": {
-#                     "color": colors[i],
-#                     "linewidth": linewidth,
-#                     "where": "post",
-#                 },
-#             }
-#             for i in range(M)
-#         },
-#     )
-#     simulation_plot.plot(show=False)
-#     simulation_plot._content[r"$XY$"]["ax"].legend(["reference"] + model_labels, loc=2)
-
-
 @torch.no_grad()
-def control_exp1():
-    config_path = "config/blackbox_dyn6_control_dpc.json"
+def control_open_loop():
+    config_path = "config/control/neural_dyn6.json"
     config = load_config(config_path)
     # load control dataset
     fabric = Fabric()
@@ -297,26 +73,19 @@ def control_exp1():
         Nf=Nf,
     )
     control_model = MLPControlPolicy(
-        nx=DYN6_NX,
-        nu=DYN6_NUTILDE,
-        Nf=Nf,
         mlp=MLP(
-            nin=DYN6_NX - 3 + (Nf + 1) * 4,
-            nout=DYN6_NUTILDE * Nf,
+            nin=MLPControlPolicy.nin,
+            nout=MLPControlPolicy.nout,
             nhidden=config["control_model"]["nhidden"],
             nonlinearity=config["control_model"]["nonlinearity"],
         ),
     )
     try:
         blackbox_dyn6_model.model.model.ode.load_state_dict(
-            torch.load(config["system_model"]["checkpoint_path"], map_location="cpu")[
-                "system_model"
-            ]
+            torch.load(config["system_model"]["input_checkpoint"], map_location="cpu")
         )
         control_model.mlp.load_state_dict(
-            torch.load(config["control_model"]["checkpoint_path"], map_location="cpu")[
-                "control_model"
-            ]
+            torch.load(config["control_model"]["input_checkpoint"], map_location="cpu")
         )
     except FileNotFoundError:
         print("No checkpoint found, using random initialization")
@@ -363,25 +132,13 @@ def control_exp1():
     x1toNf = blackbox_dyn6_model(x0, u0toNfminus1)
     plot_x1toNf.append(x1toNf.cpu().numpy())
     plot_u0toNf.append(u0toNfminus1.cpu().numpy())
-    #  4. dpc with kin4_model
-    # x1toNf = kin4_model(x0[..., [0, 1, 2, 3, 6]], u0toNfminus1)
-    # x1toNf = torch.cat(
-    #     (
-    #         x1toNf[..., [0, 1, 2, 3]],
-    #         torch.full((1, Nf, 2), torch.nan, device=x1toNf.device),
-    #         x1toNf[..., [4]],
-    #     ),
-    #     dim=-1,
-    # )
-    # plot_x1toNf.append(x1toNf.cpu().numpy())
-    # plot_u0toNf.append(u0toNfminus1.cpu().numpy())
 
     # plot
     plot_u0toNf = np.concatenate(plot_u0toNf, axis=0)
     plot_x1toNf = np.concatenate(plot_x1toNf, axis=0)
     x0 = x0.squeeze(0).cpu().numpy()
     xref0toNf = xref0toNf.squeeze(0).cpu().numpy()
-    plot_stuff(
+    plot_control_trajs(
         x0,
         xref0toNf,
         plot_u0toNf,
@@ -390,20 +147,17 @@ def control_exp1():
             "MPC+NeuralDyn6",
             "MPC+Kin4",
             "DPC+NeuralDyn6",
-            # "DPC+Kin4",
         ],
     )
-    plt.savefig("dpc_ol.png", dpi=300)
+    plt.savefig("experiments/control/dpc_ol.png", dpi=300)
     # plt.show()
 
 
-def control_exp2():
-    df = pd.read_csv("dpc_w_warmstarting.csv")
+def control_closed_loop():
+    df = pd.read_csv("experiments/control/dpc_closed_loop.csv")
     method = df["method"].values
     X = df["X"].values
     Y = df["Y"].values
-    # phi = df["phi"].values
-    # v_x = df["v_x"].values
     T = df["T_0"].values
     delta = np.rad2deg(df["last_delta"].values + df["ddelta_0"].values)
     ddelta = np.rad2deg(df["ddelta_0"].values)
@@ -470,28 +224,12 @@ def control_exp2():
     ax_ddelta.set_xlabel("simulation time [s]")
 
     fig.tight_layout()
-    plt.savefig("dpc_cl.png", dpi=300)
+    plt.savefig("experiments/control/dpc_cl.png", dpi=300)
     # plt.show()
 
 
-def control_dataset_size():
-    train_data_dir = "data_v1.1.0/train"
-    train_data_dir = "data_v1.1.0/test"
-    file_paths = [
-        os.path.abspath(os.path.join(train_data_dir, file_path))
-        for file_path in os.listdir(train_data_dir)
-        if file_path.endswith(".csv")
-    ]
-    control_dataset = ControlDataset(file_paths)
-    print(len(control_dataset))
-
-
 if __name__ == "__main__":
-    # main()
-    # plot_errors()
-    # dataset_velocity_distribution()
-    # plot_losses()
-    # plot_trajs()
-    control_exp1()
-    # control_exp2()
-    # control_dataset_size()
+    print("Open loop ======================================== ")
+    control_open_loop()
+    print("Closed loop ========================================")
+    control_closed_loop()

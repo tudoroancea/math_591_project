@@ -1,5 +1,5 @@
 {
-    "with_wandb": false,
+    "with_wandb": true,
     "system_model": {
         "name": "neural_dyn6",
         "nhidden": [
@@ -17,7 +17,7 @@
             128
         ],
         "nonlinearity": "leaky_relu",
-        "from_checkpoint": true,
+        "from_checkpoint": false,
         "input_checkpoint": "checkpoints/control/neural_dyn6.ckpt",
         "output_checkpoint": "checkpoints/control/neural_dyn6.ckpt"
     },

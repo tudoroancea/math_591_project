@@ -65,22 +65,10 @@ def train(
     num_epochs: int = 10,
     with_wandb: bool = False,
 ):
-    ic(loss_weights)
     delta_max = torch.deg2rad(
         torch.tensor(
             40.0, dtype=torch.float32, requires_grad=False, device=control_model.device
         )
-    )
-    ddelta_max = (
-        torch.deg2rad(
-            torch.tensor(
-                68.0,
-                dtype=torch.float32,
-                requires_grad=False,
-                device=control_model.device,
-            )
-        )
-        / 20.0
     )
     best_val_loss = float("inf")
     for epoch in tqdm(range(num_epochs)):
@@ -112,7 +100,7 @@ def train(
                 v_x_lb_loss,
                 delta_ub_loss,
                 delta_lb_loss,
-            ) = run_model(system_model, control_model, batch, delta_max, ddelta_max)
+            ) = run_model(system_model, control_model, batch, delta_max)
 
             loss = (
                 loss_weights["q_XY"] * XY_loss
@@ -163,7 +151,7 @@ def train(
                     v_x_lb_loss,
                     delta_ub_loss,
                     delta_lb_loss,
-                ) = run_model(system_model, control_model, batch, delta_max, ddelta_max)
+                ) = run_model(system_model, control_model, batch, delta_max)
             val_losses["XY"] += XY_loss.item()
             val_losses["phi"] += phi_loss.item()
             val_losses["v_x"] += v_x_loss.item()
@@ -236,9 +224,9 @@ def main():
     # system model config
     system_model_config = config["system_model"]
     system_model_name = system_model_config["name"]
-    ode_t = ode_from_string(system_model_name)
+    ode_t = ode_from_string[system_model_name]
     assert issubclass(ode_t, NeuralMixin), "system model must be a neural model"
-    system_input_checkpoint = system_model_config["checkpoint"]
+    system_input_checkpoint = system_model_config["input_checkpoint"]
 
     # control model config
     control_model_config = config["control_model"]
@@ -246,7 +234,7 @@ def main():
     control_output_ckpt = control_model_config["output_checkpoint"]
 
     # training config
-    train_config = config["train"]
+    train_config = config["training"]
     num_epochs = train_config["num_epochs"]
     loss_weights = train_config["loss_weights"]
     train_val_batch_size = train_config["batch_size"]
@@ -259,7 +247,7 @@ def main():
     scheduler = scheduler_params.pop("name")
 
     # testing config
-    test_data_dir = config["test"]["data_dir"]
+    test_data_dir = config["testing"]["data_dir"]
 
     # intialize lightning fabric ===============================================
     fabric = Fabric()
@@ -271,12 +259,12 @@ def main():
             model=RK4(
                 ode=ode_t(
                     net=MLP(
+                        nin=ode_t.nin,
+                        nout=ode_t.nout,
                         nhidden=system_model_config["nhidden"],
                         nonlinearity=system_model_config["nonlinearity"],
                     ),
-                )
-                if system_model_name.startswith("blackbox")
-                else ode_t(),
+                ),
                 dt=dt,
             ),
         ),
@@ -322,9 +310,6 @@ def main():
             print(
                 "Checkpoint found for control model, but not compatible with current model"
             )
-
-    if with_wandb:
-        wandb.watch(control_model, log_freq=1)
 
     match optimizer:
         case "sgd":
@@ -374,6 +359,7 @@ def main():
             name=f"control|dpc",
             config=config,
         )
+        wandb.watch(control_model, log_freq=1)
 
     # Run training loop with validation =========================================
     train(
@@ -427,7 +413,7 @@ def main():
         os.mkdir("plots")
     plot_names = [f"{system_model_name}_control_{i}.png" for i in range(5)]
     for i in range(5):
-        plot_stuff(
+        plot_control_trajs(
             x0=x0[i],
             xref0toNf=xref0toNf[i],
             u0toNfminus1=u0toNfminus1[i],

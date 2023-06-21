@@ -1,5 +1,5 @@
 {
-    "with_wandb": false,
+    "with_wandb": true,
     "model": {
         "name": "neural_dyn6",
         "n_hidden": [

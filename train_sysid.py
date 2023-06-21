@@ -158,7 +158,7 @@ def main():
     parser.add_argument(
         "--cfg_file",
         type=str,
-        default="config/sysid/neuraldyn6_nf10.json",
+        default="config/sysid/neural_dyn6_nf10.json",
         help="specify the config file used for training",
     )
     args = parser.parse_args()
@@ -225,8 +225,6 @@ def main():
         ),
         Nf=train_Nf,
     )
-    if with_wandb:
-        wandb.watch(system_model, log_freq=1)
 
     if from_checkpoint:
         try:
@@ -289,6 +287,7 @@ def main():
             name=f"sysid|{model_name}",
             config=config,
         )
+        wandb.watch(system_model, log_freq=1)
 
     # Run training loop with validation =========================================
     try:
@@ -394,7 +393,7 @@ def main():
         os.mkdir("plots")
     plot_names = [f"{model_name}_{i}.png" for i in range(5)]
     for i in range(5):
-        plot_open_loop_predictions(
+        plot_sysid_trajs(
             xtilde0=xtilde0[i],
             utilde0toNfminus1=utilde0toNfminus1[i],
             xtilde1toNf=xtilde1toNf[i],

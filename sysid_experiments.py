@@ -4,20 +4,21 @@ import json
 import os
 
 import lightning as L
+import scienceplots
 import torch
 import torch.nn.functional as F
 from lightning import Fabric
 from matplotlib import pyplot as plt
 
-from math_591_project.utils import *
 from math_591_project.models import *
+from math_591_project.utils import *
 
 L.seed_everything(127)
 plt.style.use(["science"])
 plt.rcParams.update({"font.size": 20})
 
 Nfs = [1, 5, 10, 20]
-config_paths = [f"config/sysid/neuraldyn6_nf{i}.json" for i in Nfs] + [
+config_paths = [f"config/sysid/neural_dyn6_nf{i}.json" for i in Nfs] + [
     "config/sysid/kin4.json"
 ]
 model_labels = [rf"NeuralDyn6 $N_f$={Nf}" for Nf in Nfs] + ["Kin4"]
@@ -349,7 +350,7 @@ def sysid_trajs():
 
     xtilde1toNf_ps = torch.cat(xtilde1toNf_ps, dim=0)  # shape (len(Nfs), Nf, 6)
 
-    plot_open_loop_predictions(
+    plot_sysid_trajs(
         xtilde0=xtilde0.squeeze(0).cpu().numpy(),
         utilde0toNfminus1=utilde0toNfminus1.squeeze(0).cpu().numpy(),
         xtilde1toNf=xtilde1toNf.squeeze(0).cpu().numpy(),
