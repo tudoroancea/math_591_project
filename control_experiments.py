@@ -2,10 +2,8 @@
 import argparse
 import json
 import os
-from pyexpat import model
 
 import lightning as L
-from sympy import O
 import torch
 import torch.nn.functional as F
 from lightning import Fabric
@@ -16,7 +14,6 @@ from math_591_project.models import *
 from math_591_project.utils.plot_utils import *
 from data_visualization import *
 from track_database import *
-from track_database.utils import plot_cones
 
 L.seed_everything(127)
 plt.style.use(["science"])
@@ -534,6 +531,7 @@ def control_exp2():
     fig.tight_layout()
     plt.savefig("dpc_cl.png", dpi=300)
     # plt.show()
+
 
 def control_dataset_size():
     train_data_dir = "data_v1.1.0/train"

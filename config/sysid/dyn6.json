@@ -1,21 +1,15 @@
 {
     "with_wandb": false,
     "model": {
-        "name": "neural_dyn6",
-        "n_hidden": [
-            128,
-            128,
-            128
-        ],
-        "nonlinearity": "leaky_relu",
+        "name": "dyn6",
         "from_checkpoint": false,
-        "input_checkpoint": "checkpoints/sysid/neural_dyn6_nf=20.ckpt",
-        "output_checkpoint": "checkpoints/sysid/neural_dyn6_nf=20.ckpt"
+        "input_checkpoint": "checkpoints/sysid/dyn6.ckpt",
+        "output_checkpoint": "checkpoints/sysid/dyn6.ckpt"
     },
     "training": {
-        "Nf": 20,
-        "num_epochs": 500,
-        "batch_size": 20000,
+        "Nf": 1,
+        "num_epochs": 1,
+        "batch_size": 100,
         "loss_weights": {
             "XY": 1.0,
             "phi": 10.0,

@@ -9,6 +9,7 @@ __all__ = [
     "DiscreteModel",
     "Kin4",
     "Dyn6",
+    "NeuralMixin",
     "NeuralDyn6",
     "RK4",
     "OpenLoop",
@@ -20,10 +21,10 @@ class Model(nn.Module):
     state_dim: int
     control_dim: int
 
-    def __init__(self, state_dim: int, control_dim: int):
-        super().__init__()
-        self.state_dim = state_dim
-        self.control_dim = control_dim
+    # def __init__(self, state_dim: int, control_dim: int):
+    #     super().__init__()
+    #     self.state_dim = state_dim
+    #     self.control_dim = control_dim
 
     def forward(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         """
@@ -31,29 +32,40 @@ class Model(nn.Module):
         :param u: shape (batch_size, control_dim)
         :return xnext or xdot: shape (batch_size, state_dim)
         """
-        assert len(x.shape) == 2
-        assert len(u.shape) == 2
-        assert x.shape[0] == u.shape[0]
-        assert x.shape[1] == self.state_dim
-        assert u.shape[1] == self.control_dim
+        assert len(x.shape) == 2, f"x must be 2D but is {len(x.shape)}D"
+        assert len(u.shape) == 2, f"u must be 2D but is {len(u.shape)}D"
+        assert (
+            x.shape[0] == u.shape[0]
+        ), f"batch sizes must match but are {x.shape[0]} for x and {u.shape[0]} for u"
+        assert (
+            x.shape[1] == self.state_dim
+        ), f"x.shape[1] must be {self.state_dim} but is {x.shape[1]}"
+        assert (
+            u.shape[1] == self.control_dim
+        ), f"u.shape[1] must be {self.control_dim} but is {u.shape[1]}"
 
 
 class ContinuousModel(Model):
-    def __init__(self, state_dim: int, control_dim: int):
-        super().__init__(state_dim, control_dim)
+    # def __init__(self, state_dim: int, control_dim: int):
+    #     super().__init__(state_dim, control_dim)
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__()
 
 
 class DiscreteModel(Model):
     dt: float
 
-    def __init__(self, state_dim: int, control_dim: int, dt: float):
-        super().__init__(state_dim, control_dim)
+    # def __init__(self, state_dim: int, control_dim: int, dt: float):
+    #     super().__init__(state_dim, control_dim)
+    #     self.dt = dt
+    def __init__(self, dt: float, *args, **kwargs):
+        super().__init__()
         self.dt = dt
 
 
 class Kin4(ContinuousModel):
-    NXTILDE = 4
-    NUTILDE = 2
+    state_dim = 4
+    control_dim = 2
 
     def __init__(
         self,
@@ -66,7 +78,7 @@ class Kin4(ContinuousModel):
         C_r1=0.0,
         C_r2=3.5,
     ):
-        super().__init__(NXTILDE, NUTILDE)
+        super().__init__()
         self.m = m
         self.l_R = l_R
         self.l_F = l_F
@@ -101,6 +113,9 @@ class Kin4(ContinuousModel):
 
 
 class Dyn6(ContinuousModel):
+    state_dim = 6
+    control_dim = 2
+
     def __init__(
         self,
         m=223.0,
@@ -119,7 +134,7 @@ class Dyn6(ContinuousModel):
         C_F=1.98,
         D_F=1.67,
     ):
-        super().__init__(DYN6_NXTILDE, DYN6_NUTILDE)
+        super().__init__()
         self.m = m
         self.l_R = l_R
         self.l_F = l_F
@@ -188,27 +203,52 @@ class Dyn6(ContinuousModel):
         )
 
 
-class NeuralDyn6(ContinuousModel):
-    nin = DYN6_NXTILDE + DYN6_NUTILDE - 3
-    nout = DYN6_NXTILDE - 3
+class NeuralMixin:
+    nin: int
+    nout: int
+    net: nn.Module
 
-    def __init__(self, net: nn.Module):
-        super().__init__(DYN6_NXTILDE, DYN6_NUTILDE)
-        # check that net is compatible with the input size
+    def __init__(self, net: nn.Module) -> None:
         with torch.no_grad():
             batch_size = 2
             try:
-                output = net(torch.ones(batch_size, self.nxtilde + self.nutilde - 3))
+                output = net(torch.zeros(batch_size, self.nin))
             except:
                 raise ValueError(
-                    "net must take as input a tensor of shape (batch, nx+nu-3)=(batch, 5)"
+                    f"net must take as input a tensor of shape (batch, {self.nin})"
                 )
             assert output.shape == (
                 batch_size,
-                self.nxtilde - 3,
-            ), "net must output a tensor of shape (batch, nxtilde-3)=(batch, 3)"
+                self.nout,
+            ), f"net must output a tensor of shape (batch, {self.nout})"
 
         self.net = net
+
+
+class NeuralDyn6(ContinuousModel, NeuralMixin):
+    state_dim = 6
+    control_dim = 2
+    nin = state_dim + control_dim - 3
+    nout = state_dim - 3
+
+    def __init__(self, net: nn.Module):
+        # check that net is compatible with the input size
+        # with torch.no_grad():
+        #     batch_size = 2
+        #     try:
+        #         output = net(torch.ones(batch_size, self.nxtilde + self.nutilde - 3))
+        #     except:
+        #         raise ValueError(
+        #             "net must take as input a tensor of shape (batch, nx+nu-3)=(batch, 5)"
+        #         )
+        #     assert output.shape == (
+        #         batch_size,
+        #         self.nxtilde - 3,
+        #     ), "net must output a tensor of shape (batch, nxtilde-3)=(batch, 3)"
+
+        # self.net = net
+        ContinuousModel.__init__(self)
+        NeuralMixin.__init__(self, net)
 
     def forward(self, xtilde: torch.Tensor, utilde: torch.Tensor) -> torch.Tensor:
         """
@@ -232,8 +272,10 @@ class NeuralDyn6(ContinuousModel):
 
 
 class RK4(DiscreteModel):
-    def __init__(self, ode: ContinuousModel, nxtilde: int, nutilde: int, dt: float):
-        super().__init__(nxtilde, nutilde, dt)
+    def __init__(self, ode: ContinuousModel, dt: float):
+        super().__init__(dt)
+        self.state_dim = ode.state_dim
+        self.control_dim = ode.control_dim
         self.ode = ode
 
     def forward(self, xtilde: torch.Tensor, utilde: torch.Tensor) -> torch.Tensor:
@@ -266,7 +308,9 @@ class OpenLoop(nn.Module):
         :param u0toNfminus1: (batch_size, Nf, nu)
         :return x1toNf: (batch_size, Nf, nx)
         """
-        assert x0.shape[0] == u0toNfminus1.shape[0]
+        assert (
+            x0.shape[0] == u0toNfminus1.shape[0]
+        ), f"batch size must be the same but are {x0.shape[0]} for x0 (total shape {x0.shape})and {u0toNfminus1.shape[0]} for u0toNfminus1 (total shape {u0toNfminus1.shape})"
         assert u0toNfminus1.shape[1] == self.Nf
         x1toNf = [self.model(x0[:, 0, :], u0toNfminus1[:, 0, :])]
         for i in range(1, self.Nf):
@@ -276,7 +320,10 @@ class OpenLoop(nn.Module):
 
 
 ode_from_string = {
+    "kin4": Kin4,
     "Kin4": Kin4,
     "Dyn6": Dyn6,
+    "dyn6": Dyn6,
     "NeuralDyn6": NeuralDyn6,
+    "neural_dyn6": NeuralDyn6,
 }

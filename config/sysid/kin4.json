@@ -2,14 +2,14 @@
     "with_wandb": false,
     "model": {
         "name": "kin4",
-        "from_checkpoint": false,
+        "from_checkpoint": true,
         "input_checkpoint": "checkpoints/sysid/kin4.ckpt",
         "output_checkpoint": "checkpoints/sysid/kin4.ckpt"
     },
     "training": {
         "Nf": 1,
-        "num_epochs": 500,
-        "batch_size": 100000,
+        "num_epochs": 0,
+        "batch_size": 100,
         "loss_weights": {
             "XY": 1.0,
             "phi": 10.0,
@@ -17,7 +17,7 @@
             "v_y": 1.0,
             "r": 1.0
         },
-        "data_dir": "data/train_sysid",
+        "data_dir": "dataset_v2.0.0/train_sysid",
         "optimizer": {
             "name": "adamw",
             "lr": 0.0005,
@@ -30,6 +30,6 @@
     "testing": {
         "Nf": 40,
         "num_samples": 0,
-        "data_dir": "data/test_sysid"
+        "data_dir": "dataset_v2.0.0/test_sysid"
     }
 }

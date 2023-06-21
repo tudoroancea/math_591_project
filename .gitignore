@@ -15,6 +15,4 @@ __pycache__
 *.jpeg
 *.npy
 
-data.zip
-data
-wandb
+dataset*

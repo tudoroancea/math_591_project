@@ -16,6 +16,8 @@ class MLP(nn.Module):
     ):
         super().__init__()
         assert len(nhidden) >= 1
+        # NOTE: we did not use a match statement here because we want this file (and the
+        # whole models subpackage) to be compatible with Python 3.9 for deployment in BRAINS
         if nonlinearity == "relu":
             self.nonlinearity = nn.ReLU()
         elif nonlinearity == "leaky_relu":

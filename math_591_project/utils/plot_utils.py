@@ -10,7 +10,7 @@ from icecream import ic
 if sys.platform == "linux":
     matplotlib.use("TkAgg")
 
-__all__ = ["plot_open_loop_predictions", "plot_dyn6_control"]
+__all__ = ["plot_open_loop_predictions", "plot_stuff"]
 
 
 def plot_open_loop_predictions(

@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 from copy import copy
+from pyexpat import model
 
 import lightning as L
 import torch
@@ -16,12 +17,20 @@ from tqdm import tqdm
 from math_591_project.utils import *
 from math_591_project.models import *
 
+import logging
+
+log = logging.getLogger("lightning")
+log.propagate = False
+log.setLevel(logging.ERROR)
+
 L.seed_everything(127)
 
 
-def run_model(system_model, batch):
+def run_model(system_model, batch, ode_t):
     xtilde0, utilde0toNfminus1, xtilde1toNf = batch
-    xtilde1toNf_p = system_model(xtilde0, utilde0toNfminus1)
+    xtilde1toNf_p = system_model(
+        xtilde0[..., :4] if ode_t == Kin4 else xtilde0, utilde0toNfminus1
+    )
     XY_loss = F.mse_loss(xtilde1toNf_p[..., :2], xtilde1toNf[..., :2])
     phi_loss = F.mse_loss(xtilde1toNf_p[..., 2], xtilde1toNf[..., 2])
     v_x_loss = F.mse_loss(xtilde1toNf_p[..., 3], xtilde1toNf[..., 3])
@@ -36,11 +45,12 @@ def run_model(system_model, batch):
 
 def train(
     fabric: Fabric,
-    model_name: str,
+    ode_t: type[Kin4],
     system_model: OpenLoop,
     optimizer: torch.optim.Optimizer,
     train_dataloader: torch.utils.data.DataLoader,
     val_dataloader: torch.utils.data.DataLoader,
+    output_checkpoint: str,
     scheduler: torch.optim.lr_scheduler.LRScheduler = None,
     num_epochs=10,
     loss_weights={"XY": 1.0, "phi": 1.0, "v_x": 1.0, "v_y": 1.0, "r": 1.0},
@@ -60,7 +70,7 @@ def train(
         for batch in train_dataloader:
             optimizer.zero_grad()
             XY_loss, phi_loss, v_x_loss, v_y_loss, r_loss = run_model(
-                system_model, batch
+                system_model, batch, ode_t
             )
             loss = (
                 loss_weights["XY"] * XY_loss
@@ -101,7 +111,7 @@ def train(
         for batch in val_dataloader:
             with torch.no_grad():
                 XY_loss, phi_loss, v_x_loss, v_y_loss, r_loss = run_model(
-                    system_model, batch
+                    system_model, batch, ode_t
                 )
             val_losses["total"] += (
                 loss_weights["XY"] * XY_loss
@@ -138,12 +148,8 @@ def train(
         if val_losses["total"] < best_val_loss:
             best_val_loss = val_losses["total"]
             fabric.save(
-                f"checkpoints/{model_name}_best.ckpt",
-                {
-                    "system_model": system_model.model.ode,
-                    "optimizer": optimizer,
-                    "scheduler": scheduler,
-                },
+                output_checkpoint,
+                system_model.model.ode.state_dict(),
             )
 
 
@@ -158,39 +164,43 @@ def main():
     args = parser.parse_args()
 
     # extract config =================================================================
+    ic(args.cfg_file)
     config = json.load(open(args.cfg_file, "r"))
     with_wandb = config.pop("with_wandb")
     print(f"Training " + ("with" if with_wandb else "without") + " wandb")
 
     # model config
     model_config = config["model"]
-    model_name: str = config["model"]["name"]
-    model_is_neural = model_name.startswith("neural")
+    model_name: str = model_config["name"]
+    ode_t = ode_from_string[model_name]
+    model_is_neural = issubclass(ode_t, NeuralMixin)
     if model_is_neural:
-        nhidden = config["model"]["n_hidden"]
-        nonlinearity = config["model"]["nonlinearity"]
-    from_checkpoint = config["model"]["from_checkpoint"]
-    input_checkpoint = config["model"]["input_checkpoint"]
-    output_checkpoint = config["model"]["output_checkpoint"]
+        nhidden = model_config["n_hidden"]
+        nonlinearity = model_config["nonlinearity"]
+    from_checkpoint = model_config["from_checkpoint"]
+    input_checkpoint = model_config["input_checkpoint"]
+    output_checkpoint = model_config["output_checkpoint"]
 
     # training config
-    training_config = config["training"]
-    train_Nf = config["training"]["Nf"]
-    num_epochs = config["training"]["num_epochs"]
-    loss_weights = config["training"]["loss_weights"]
+    train_config = config["training"]
+    train_Nf = train_config["Nf"]
+    num_epochs = train_config["num_epochs"]
+    train_val_batch_size = train_config["batch_size"]
+    loss_weights = train_config["loss_weights"]
+    train_data_dir = train_config["data_dir"]
 
-    optimizer_config = config["training"]["optimizer"]
+    optimizer_config = train_config["optimizer"]
     optimizer = optimizer_config.pop("name")
 
-    scheduler_config = config["training"]["scheduler"]
+    scheduler_config = train_config["scheduler"]
     scheduler = scheduler_config.pop("name")
 
-    data_dir = config["data"]["dir"]
-    train_dataset_path = config["data"]["train"]
-    test_dataset_path = config["data"]["test"]
-    train_Nf = config["training"]["Nf"]
-    test_Nf = config["testing"]["Nf"]
-    train_val_batch_size = config["training"]["batch_size"]
+    test_config = config["testing"]
+    test_data_dir = test_config["data_dir"]
+    test_Nf = test_config["Nf"]
+    test_batch_size = (
+        test_config["num_samples"] if test_config["num_samples"] > 0 else 5
+    )
 
     # intialize lightning fabric ===============================================
     fabric = Fabric()
@@ -211,8 +221,6 @@ def main():
             )
             if model_is_neural
             else ode_t(),
-            nxtilde=nxtilde,
-            nutilde=nutilde,
             dt=dt,
         ),
         Nf=train_Nf,
@@ -257,7 +265,6 @@ def main():
 
     # load data ================================================================
     # load all CSV files in data/sysid
-    train_data_dir = os.path.join(data_dir, train_dataset_path)
     file_paths = [
         os.path.abspath(os.path.join(train_data_dir, file_path))
         for file_path in os.listdir(train_data_dir)
@@ -285,11 +292,12 @@ def main():
     try:
         train(
             fabric,
-            model_name,
+            ode_t,
             system_model,
             optimizer,
             train_dataloader,
             val_dataloader,
+            output_checkpoint=output_checkpoint,
             scheduler=scheduler,
             num_epochs=num_epochs,
             loss_weights=loss_weights,
@@ -301,38 +309,44 @@ def main():
         )
 
     # save model ================================================================
-    fabric.save(
-        f"checkpoints/{model_name}_final.ckpt",
-        {"system_model": system_model.model.ode},
-    )
-
+    # fabric.save(output_checkpoint, system_model.model.ode.state_dict())
+    # log the model to wandb
     if with_wandb:
-        # log the model to wandb
-        wandb.save(f"checkpoints/{model_name}_final.ckpt")
-        wandb.save(f"checkpoints/{model_name}_best.ckpt")
+        wandb.save(output_checkpoint)
 
     # evaluate model on test set ================================================
     # recreate open loop model with new Nf
     system_model = OpenLoop(
         model=RK4(
-            nxtilde=nxtilde,
-            nutilde=nutilde,
             ode=ode_t(
-                net=MLP(nin=nin, nout=nout, nhidden=nhidden, nonlinearity=nonlinearity)
+                net=MLP(
+                    nin=ode_t.nin,
+                    nout=ode_t.nout,
+                    nhidden=nhidden,
+                    nonlinearity=nonlinearity,
+                )
             )
-            if model_name.startswith("blackbox")
+            if model_is_neural
             else ode_t(),
             dt=dt,
         ),
         Nf=test_Nf,
     )
-    system_model.model.ode.load_state_dict(
-        torch.load(f"checkpoints/{model_name}_best.ckpt")["system_model"]
-    )
+    try:
+        system_model.model.ode.load_state_dict(
+            torch.load(output_checkpoint, map_location="cpu")
+        )
+        print("Successfully loaded model parameters from checkpoint for testing")
+    except FileNotFoundError:
+        system_model.model.ode.load_state_dict(
+            torch.load(input_checkpoint, map_location="cpu")
+        )
+    except RuntimeError:
+        print("Checkpoint found, but not compatible with current model")
+
     system_model = fabric.setup(system_model)
 
     # create test dataloader
-    test_data_dir = os.path.join(data_dir, test_dataset_path)
     file_paths = [
         os.path.abspath(os.path.join(test_data_dir, file_path))
         for file_path in os.listdir(test_data_dir)
@@ -340,32 +354,55 @@ def main():
     ]
     test_dataset = SysidTestDataset(file_paths, test_Nf)
     test_dataloader = DataLoader(
-        test_dataset, batch_size=5, shuffle=True, num_workers=1
+        test_dataset, batch_size=test_batch_size, shuffle=True, num_workers=1
     )
     test_dataloader = fabric.setup_dataloaders(test_dataloader)
 
     # evaluate model on test set
     system_model.eval()
     xtilde0, utilde0toNfminus1, xtilde1toNf = next(iter(test_dataloader))
-    xtilde1toNf_p = system_model(xtilde0, utilde0toNfminus1)
-    xtilde0 = xtilde0.detach().cpu().numpy()
-    utilde0toNfminus1 = utilde0toNfminus1.detach().cpu().numpy()
-    xtilde1toNf = xtilde1toNf.detach().cpu().numpy()
-    xtilde1toNf_p = xtilde1toNf_p.detach().cpu().numpy()
+    xtilde1toNf_p = system_model(
+        xtilde0[..., :4] if ode_t == Kin4 else xtilde0,
+        utilde0toNfminus1,
+    )
+    if ode_t == Kin4:
+        # add nans to xtilde0
+        xtilde0 = torch.cat(
+            [
+                xtilde0[..., :4],
+                torch.full_like(xtilde0[..., :2], fill_value=np.nan),
+            ],
+            dim=-1,
+        )
+        xtilde1toNf_p = torch.cat(
+            [
+                xtilde1toNf_p[..., :4],
+                torch.full_like(xtilde1toNf_p[..., :2], fill_value=np.nan),
+            ],
+            dim=-1,
+        )
+
+    xtilde0 = xtilde0.detach().cpu().numpy()  # shape (5, 1, 6)
+    utilde0toNfminus1 = utilde0toNfminus1.detach().cpu().numpy()  # shape (5, Nf, 2)
+    xtilde1toNf = xtilde1toNf.detach().cpu().numpy()  # shape (5, Nf, 6)
+    xtilde1toNf_p = (
+        xtilde1toNf_p.unsqueeze(1).detach().cpu().numpy()
+    )  # shape (5, 1, Nf, 6)
     if not os.path.exists("plots"):
         os.mkdir("plots")
     plot_names = [f"{model_name}_{i}.png" for i in range(5)]
     for i in range(5):
-        (plot_kin4 if model_name.endswith("kin4") else plot_dyn6)(
+        plot_open_loop_predictions(
             xtilde0=xtilde0[i],
             utilde0toNfminus1=utilde0toNfminus1[i],
             xtilde1toNf=xtilde1toNf[i],
             xtilde1toNf_p=xtilde1toNf_p[i],
+            model_labels=[model_name],
             dt=dt,
         )
         plt.savefig("plots/" + plot_names[i], dpi=300)
+    # log the plots to wandb
     if with_wandb:
-        # log the plot to wandb
         wandb.log(
             {
                 "plot/" + plot_name: wandb.Image("plots/" + plot_name)

@@ -13,7 +13,6 @@ __all__ = [
     "LiftedDiscreteModel",
     "MLPControlPolicy",
     "OpenLoop",
-    "ClosedLoop",
 ]
 
 KIN4_NX = 5
@@ -22,10 +21,10 @@ DYN6_NX = 7
 
 class LiftedDiscreteModel(DiscreteModel):
     def __init__(self, model: DiscreteModel, nx: int, nu: int):
-        super().__init__(nx, nu)
+        super().__init__(model.dt)
+        self.state_dim = model.state_dim + 1
+        self.control_dim = model.control_dim
         self.model = model
-        self.nx = nx
-        self.nu = nu
 
     def forward(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         """
