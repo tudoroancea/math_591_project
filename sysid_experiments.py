@@ -18,10 +18,12 @@ plt.style.use(["science"])
 plt.rcParams.update({"font.size": 20})
 
 Nfs = [1, 5, 10, 20]
-config_paths = [f"config/sysid/neural_dyn6_nf={i}.json" for i in Nfs] + [
-    "config/sysid/kin4.json"
-]
-model_labels = [rf"NeuralDyn6 $N_f$={Nf}" for Nf in Nfs] + ["Kin4"]
+# config_paths = [f"config/sysid/neural_dyn6_nf={i}.json" for i in Nfs] + [
+#     "config/sysid/kin4.json"
+# ]
+# model_labels = [rf"NeuralDyn6 $N_f$={Nf}" for Nf in Nfs] + ["Kin4"]
+config_paths = ["config/sysid/dyn6.json"]
+model_labels = ["Dyn6"]
 
 
 def dataset_velocity_distribution():
@@ -181,15 +183,15 @@ def create_sysid_test_model(fabric: Fabric, config: dict):
         Nf=config["testing"]["Nf"],
     )
 
-    try:
-        (
-            system_model.model.ode.net if model_is_neural else system_model.model.ode
-        ).load_state_dict(torch.load(input_checkpoint, map_location="cpu"))
-        print("Successfully loaded model parameters from checkpoint")
-    except FileNotFoundError:
-        print("No checkpoint found, using random initialization")
-    except RuntimeError:
-        print("Checkpoint found, but not compatible with current model")
+    # try:
+    #     (
+    #         system_model.model.ode.net if model_is_neural else system_model.model.ode
+    #     ).load_state_dict(torch.load(input_checkpoint, map_location="cpu"))
+    #     print("Successfully loaded model parameters from checkpoint")
+    # except FileNotFoundError:
+    #     print("No checkpoint found, using random initialization")
+    # except RuntimeError:
+    #     print("Checkpoint found, but not compatible with current model")
 
     system_model = fabric.setup(system_model)
     system_model.eval()
@@ -258,14 +260,16 @@ def sysid_errors():
             )
 
         plt.xlabel("stage")
-        plt.legend()
         plt.ylabel("error")
+        plt.title(plot_titles[i])
+        plt.legend()
         plt.tight_layout()
-        plt.savefig(
-            f"experiments/sysid/sysid_errors_{plot_titles[i]}.png",
-            dpi=300,
-            bbox_inches="tight",
-        )
+        # plt.savefig(
+        #     f"experiments/sysid/sysid_errors_{plot_titles[i]}.png",
+        #     dpi=300,
+        #     bbox_inches="tight",
+        # )
+        # plt.show
 
     # compute means by variable => list of arrays of shape (5,)
     means = [error.mean(axis=(0, 1)) for error in errors]
@@ -356,15 +360,16 @@ def sysid_trajs():
         model_labels=model_labels,
         dt=1 / 20,
     )
-    plt.savefig(f"experiments/sysid/sysid_trajs.png", dpi=300)
+    # plt.savefig(f"experiments/sysid/sysid_trajs.png", dpi=300)
+    plt.show()
 
 
 if __name__ == "__main__":
-    print("Dataset velocity distribution =====================")
-    dataset_velocity_distribution()
-    print("Sysid losses =======================================")
-    sysid_losses()
-    print("Sysid errors =======================================")
-    sysid_errors()
+    # print("Dataset velocity distribution =====================")
+    # dataset_velocity_distribution()
+    # print("Sysid losses =======================================")
+    # sysid_losses()
+    # print("Sysid errors =======================================")
+    # sysid_errors()
     print("Sysid trajs ========================================")
     sysid_trajs()

@@ -115,6 +115,12 @@ class Kin4(ContinuousModel):
 class Dyn6(ContinuousModel):
     state_dim = 6
     control_dim = 2
+    B = 11.5
+    C = 1.98
+    D = 1670.0
+    # B = 11.5
+    # C = 1.4
+    # D = 70.0
 
     def __init__(
         self,
@@ -122,17 +128,27 @@ class Dyn6(ContinuousModel):
         l_R=0.8,
         l_F=0.4,
         I_z=78.79,
+        # C_m1=3300.0,
+        # C_m2 = 40.0,
+        # C_r0 = 100.0,
+        # C_r1 = 1.0e4,
+        # C_r2 = 3.0,
         C_m1=3500.0,
-        C_m2=0.0,
-        C_r0=0.0,
-        C_r1=0.0,
-        C_r2=3.5,
-        B_R=11.5,
-        C_R=1.98,
-        D_R=1.67,
-        B_F=11.5,
-        C_F=1.98,
-        D_F=1.67,
+        C_m2=10.0,
+        C_r0=0.1,
+        C_r1=5.0,
+        C_r2=2.2,
+        # C_m1=8000.0,
+        # C_m2=172.0,
+        # C_r0=180.0,
+        # C_r1=1e5,
+        # C_r2=0.7,
+        B_R=B,
+        C_R=C,
+        D_R=D,
+        B_F=B,
+        C_F=C,
+        D_F=D,
     ):
         super().__init__()
         self.m = m
@@ -160,30 +176,27 @@ class Dyn6(ContinuousModel):
         super().forward(xtilde, utilde)
         F_x = (
             (self.C_m1 - self.C_m2 * xtilde[:, 3]) * utilde[:, 0]
-            - self.C_r0 * torch.tanh(self.C_r1 * xtilde[:, 3])
+            - self.C_r0 * torch.tanh(1000 * self.C_r0 * xtilde[:, 3])
+            - self.C_r1 * xtilde[:, 3]
             - self.C_r2 * xtilde[:, 3] ** 2
         )
-        F_y_R = self.D_R * torch.sin(
-            self.C_R
-            * torch.atan(
-                self.B_R
-                * torch.atan(
-                    (xtilde[:, 4] - self.l_R * xtilde[:, 5]) / (1e-6 + xtilde[:, 3])
-                )
-            )
+        alpha_R = torch.atan2(
+            xtilde[:, 4] - self.l_R * xtilde[:, 5], xtilde[:, 3] + 1e-6
         )
-        F_y_F = self.D_F * torch.sin(
-            self.C_F
-            * torch.atan(
-                self.B_F
-                * (
-                    torch.atan(
-                        (xtilde[:, 4] + self.l_F * xtilde[:, 5]) / (1e-6 + xtilde[:, 3])
-                    )
-                    - utilde[:, 1]
-                )
-            )
+        alpha_F = (
+            torch.atan2(xtilde[:, 4] + self.l_F * xtilde[:, 5], xtilde[:, 3] + 1e-6)
+            - utilde[:, 1]
         )
+        # alpha_R = torch.atan(
+        #     (xtilde[:, 4] - self.l_R * xtilde[:, 5]) / (xtilde[:, 3] + 1e-6)
+        # )
+        # alpha_F = (
+        #     torch.atan((xtilde[:, 4] + self.l_F * xtilde[:, 5]) / (xtilde[:, 3] + 1e-6))
+        #     - utilde[:, 1]
+        # )
+        alpha_R, alpha_F = -alpha_R, -alpha_F
+        F_y_R = self.D_R * torch.sin(self.C_R * torch.atan(self.B_R * alpha_R))
+        F_y_F = self.D_F * torch.sin(self.C_F * torch.atan(self.B_F * alpha_F))
         return torch.stack(
             [
                 xtilde[:, 3] * torch.cos(xtilde[:, 2])
